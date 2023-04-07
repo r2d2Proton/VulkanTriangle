@@ -3,8 +3,11 @@
 #pragma comment(lib, "vulkan-1.lib")
 #pragma comment(lib, "glfw3.lib")
 
+#define VK_USE_PLATFORM_WIN32_KHR
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
 
 #include <vulkan/vulkan.h>
 
@@ -14,6 +17,7 @@
 #include <cstring>
 
 #include <vector>
+#include <set>
 #include <map>
 #include <optional>
 
@@ -22,6 +26,8 @@
 
 struct QueueFamilyIndices
 {
+    std::optional<uint32_t> presentFamily;
+
     // [0..1]
     float graphicsQueuePriority = 1.0f;
     std::optional<uint32_t> graphicsFamily;
@@ -34,6 +40,7 @@ struct QueueFamilyIndices
     float xferQueuePriority = 1.0f;
     std::optional<uint32_t> xferFamily;
 
+    bool HasPresentQueue() { return presentFamily.has_value(); }
     bool HasGraphicsQueue() { return graphicsFamily.has_value(); }
     bool HasComputeQueue() { return computeFamily.has_value(); }
     bool HasXferQueue() { return xferFamily.has_value(); }
@@ -52,15 +59,18 @@ protected:
 
     void initVulkan();
 
-    bool isDeviceSuitable(const VkPhysicalDevice& device, const LogProfile& logProfile);
+    void createSurface();
 
-    QueueFamilyIndices findQueueFamilies(const VkPhysicalDevice& device, const LogProfile& logProfile);
+    bool isDeviceSuitable(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
 
-    uint32_t rateDeviceSuitability(const VkPhysicalDevice& device, const LogProfile& logProfile);
+    QueueFamilyIndices findQueueFamilies(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
+
+    uint32_t rateDeviceSuitability(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
 
     void pickPhysicalDevice();
 
     void createLogicalDevice();
+    void createPresentQueue(const QueueFamilyIndices& queueIndices);
     void createGraphicsQueue(const QueueFamilyIndices& queueIndices);
     void createComputeQueue(const QueueFamilyIndices& queueIndices);
     void createXferQueue(const QueueFamilyIndices& queueIndices);
@@ -97,6 +107,9 @@ private:
 
     VkDevice pDevice = nullptr;
 
+    VkSurfaceKHR pSurface = nullptr;
+
+    VkQueue pPresentQueue = nullptr;
     VkQueue pGraphicsQueue = nullptr;
     VkQueue pComputeQueue = nullptr;
     VkQueue pXferQueue = nullptr;

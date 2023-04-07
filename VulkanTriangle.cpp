@@ -1,9 +1,10 @@
 #include "VulkanTriangle.h"
 
+using std::optional;
 using std::string;
 using std::vector;
 using std::multimap;
-using std::optional;
+using std::set;
 
 using std::endl;
 using std::cerr;
@@ -73,8 +74,16 @@ void VulkanTriangleApp::initVulkan()
 {
     createInstance();
     setupDebugMessenger();
+    createSurface();
     pickPhysicalDevice();
     createLogicalDevice();
+}
+
+
+void VulkanTriangleApp::createSurface()
+{
+    if (glfwCreateWindowSurface(pInstance, pWindow, nullptr, &pSurface) != VK_SUCCESS)
+        throw runtime_error("failed to create window surface");
 }
 
 
@@ -106,21 +115,28 @@ bool VulkanTriangleApp::isDeviceSuitable(const VkPhysicalDevice& device, const L
 }
 
 
-QueueFamilyIndices VulkanTriangleApp::findQueueFamilies(const VkPhysicalDevice& device, const LogProfile& logProfile)
+QueueFamilyIndices VulkanTriangleApp::findQueueFamilies(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile)
 {
     QueueFamilyIndices queueIndices;
 
     uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
 
     vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies.data());
 
     int i = 0;
     for (const auto& queueFamily : queueFamilies)
     {
         if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
             queueIndices.graphicsFamily = i;
+
+            VkBool32 presentSupport = false;
+            vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, pSurface, &presentSupport);
+
+            if (presentSupport)
+                queueIndices.presentFamily = i;
+
             if (logProfile.loqGraphicsQueue)
                 Logging::logDeviceQueueFamily("Graphics", queueFamily);
         }
@@ -142,10 +158,10 @@ QueueFamilyIndices VulkanTriangleApp::findQueueFamilies(const VkPhysicalDevice& 
 }
 
 
-uint32_t VulkanTriangleApp::rateDeviceSuitability(const VkPhysicalDevice& device, const LogProfile& logProfile)
+uint32_t VulkanTriangleApp::rateDeviceSuitability(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile)
 {
     VkPhysicalDeviceProperties deviceProperties;
-    vkGetPhysicalDeviceProperties(device, &deviceProperties);
+    vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
 
     if (logProfile.logProps) {
         Logging::logDeviceProps(deviceProperties);
@@ -160,13 +176,13 @@ uint32_t VulkanTriangleApp::rateDeviceSuitability(const VkPhysicalDevice& device
     }
 
     VkPhysicalDeviceFeatures deviceFeatures;
-    vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+    vkGetPhysicalDeviceFeatures(physicalDevice, &deviceFeatures);
 
     if (logProfile.logFeatures) {
         Logging::logDeviceFeatures(deviceFeatures);
     }
 
-    queueFamilyIndices = findQueueFamilies(device, logProfile);
+    queueFamilyIndices = findQueueFamilies(physicalDevice, logProfile);
 
     // need geometry shader
     if (!deviceFeatures.geometryShader)
@@ -174,6 +190,10 @@ uint32_t VulkanTriangleApp::rateDeviceSuitability(const VkPhysicalDevice& device
 
     // need graphics queue
     if (!queueFamilyIndices.HasGraphicsQueue())
+        return 0;
+
+    // need present queue
+    if (!queueFamilyIndices.HasPresentQueue())
         return 0;
 
     // need compute queue
@@ -234,19 +254,28 @@ void VulkanTriangleApp::createLogicalDevice()
 
 void VulkanTriangleApp::createGraphicsQueue(const QueueFamilyIndices& queueIndices)
 {
-    VkDeviceQueueCreateInfo queueCreateInfo{};
-    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queueCreateInfo.queueFamilyIndex = queueIndices.graphicsFamily.value();
-    queueCreateInfo.queueCount = 1;
-    queueCreateInfo.pQueuePriorities = &queueIndices.graphicsQueuePriority;
+    // use set to make sure the same queue (graphics/present) are
+    set<uint32_t> uniqueQueues = { queueIndices.graphicsFamily.value(), queueIndices.presentFamily.value() };
+    vector<VkDeviceQueueCreateInfo> queuesCreateInfo;
+
+    // share pointer to same priority but maybe change later
+    for (uint32_t queueFamily : uniqueQueues)
+    {
+        VkDeviceQueueCreateInfo queueCreateInfo{};
+        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueCreateInfo.queueFamilyIndex = queueFamily;
+        queueCreateInfo.queueCount = 1;
+        queueCreateInfo.pQueuePriorities = &queueIndices.graphicsQueuePriority;
+        queuesCreateInfo.push_back(queueCreateInfo);
+    }
 
     VkPhysicalDeviceFeatures deviceFeatures{};
 
     VkDeviceCreateInfo deviceCreateInfo{};
     deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 
-    deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
-    deviceCreateInfo.queueCreateInfoCount = 1;
+    deviceCreateInfo.queueCreateInfoCount = static_cast<uint32_t>(queuesCreateInfo.size());
+    deviceCreateInfo.pQueueCreateInfos = queuesCreateInfo.data();
 
     deviceCreateInfo.pEnabledFeatures = &deviceFeatures;
 
@@ -258,8 +287,11 @@ void VulkanTriangleApp::createGraphicsQueue(const QueueFamilyIndices& queueIndic
     if (vkCreateDevice(pPhysicalDevice, &deviceCreateInfo, nullptr, &pDevice) != VK_SUCCESS)
         throw runtime_error("failed to create logical device");
 
-    // logicalDevice, queueFamily, queueIndex, pHandle
+    // get graphics queue - logicalDevice, queueFamily, queueIndex, pHandle
     vkGetDeviceQueue(pDevice, queueIndices.graphicsFamily.value(), 0, &pGraphicsQueue);
+
+    // get present queue - logicalDevice, queueFamily, queueIndex, pHandle
+    vkGetDeviceQueue(pDevice, queueIndices.presentFamily.value(), 0, &pPresentQueue);
 }
 
 
@@ -419,6 +451,7 @@ void VulkanTriangleApp::cleanUp()
     if (enableValidationLayers)
         DestroyDebugUtilsMessengerEXT(pInstance, pDebugMessenger, nullptr);
 
+    vkDestroySurfaceKHR(pInstance, pSurface, nullptr);
     vkDestroyInstance(pInstance, nullptr);
 
     glfwDestroyWindow(pWindow);
