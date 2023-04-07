@@ -78,11 +78,6 @@ void VulkanTriangleApp::initVulkan()
 }
 
 
-void VulkanTriangleApp::createLogicalDevice()
-{
-}
-
-
 bool VulkanTriangleApp::isDeviceSuitable(const VkPhysicalDevice& device, const LogProfile& logProfile)
 {
     VkPhysicalDeviceProperties deviceProperties;
@@ -171,18 +166,18 @@ uint32_t VulkanTriangleApp::rateDeviceSuitability(const VkPhysicalDevice& device
         Logging::logDeviceFeatures(deviceFeatures);
     }
 
-    QueueFamilyIndices queueIndices = findQueueFamilies(device, logProfile);
+    queueFamilyIndices = findQueueFamilies(device, logProfile);
 
     // need geometry shader
     if (!deviceFeatures.geometryShader)
         return 0;
 
     // need graphics queue
-    if (!queueIndices.HasGraphicsQueue())
+    if (!queueFamilyIndices.HasGraphicsQueue())
         return 0;
 
     // need compute queue
-    if (!queueIndices.HasComputeQueue())
+    if (!queueFamilyIndices.HasComputeQueue())
         return 0;
 
     uint32_t score = 0;
@@ -224,6 +219,57 @@ void VulkanTriangleApp::pickPhysicalDevice()
 
     if (pPhysicalDevice == VK_NULL_HANDLE)
         throw runtime_error("failed to find suitable GPU");
+}
+
+
+void VulkanTriangleApp::createLogicalDevice()
+{
+    LogProfile logProfile;
+
+    createGraphicsQueue(queueFamilyIndices);
+    createComputeQueue(queueFamilyIndices);
+    createXferQueue(queueFamilyIndices);
+}
+
+
+void VulkanTriangleApp::createGraphicsQueue(const QueueFamilyIndices& queueIndices)
+{
+    VkDeviceQueueCreateInfo queueCreateInfo{};
+    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    queueCreateInfo.queueFamilyIndex = queueIndices.graphicsFamily.value();
+    queueCreateInfo.queueCount = 1;
+    queueCreateInfo.pQueuePriorities = &queueIndices.graphicsQueuePriority;
+
+    VkPhysicalDeviceFeatures deviceFeatures{};
+
+    VkDeviceCreateInfo deviceCreateInfo{};
+    deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+
+    deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
+    deviceCreateInfo.queueCreateInfoCount = 1;
+
+    deviceCreateInfo.pEnabledFeatures = &deviceFeatures;
+
+    if (enableValidationLayers) {
+        deviceCreateInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+        deviceCreateInfo.ppEnabledLayerNames = validationLayers.data();
+    }
+
+    if (vkCreateDevice(pPhysicalDevice, &deviceCreateInfo, nullptr, &pDevice) != VK_SUCCESS)
+        throw runtime_error("failed to create logical device");
+
+    // logicalDevice, queueFamily, queueIndex, pHandle
+    vkGetDeviceQueue(pDevice, queueIndices.graphicsFamily.value(), 0, &pGraphicsQueue);
+}
+
+
+void VulkanTriangleApp::createComputeQueue(const QueueFamilyIndices& queueIndices)
+{
+}
+
+
+void VulkanTriangleApp::createXferQueue(const QueueFamilyIndices& queueIndices)
+{
 }
 
 
@@ -368,6 +414,8 @@ void VulkanTriangleApp::mainLoop()
 
 void VulkanTriangleApp::cleanUp()
 {
+    vkDestroyDevice(pDevice, nullptr);
+
     if (enableValidationLayers)
         DestroyDebugUtilsMessengerEXT(pInstance, pDebugMessenger, nullptr);
 
