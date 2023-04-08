@@ -80,6 +80,7 @@ protected:
     VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
     VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& caps);
     void createSwapChain();
+    void createImageViews();
 
     bool isDeviceSuitable(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
 
