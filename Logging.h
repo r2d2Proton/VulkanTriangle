@@ -22,6 +22,11 @@ struct LogProfile
     bool loqGraphicsQueue = true;
     bool logComputeQueue = true;
     bool logXferQueue = true;
+
+    bool logCaps = true;
+    bool logFormats = true;
+    bool logPresentModes = true;
+
     //:
 };
 
@@ -35,4 +40,8 @@ namespace Logging
     void logDeviceFeatures(const VkPhysicalDeviceFeatures& deviceFeatures);
 
     void logDeviceQueueFamily(const std::string& name, const VkQueueFamilyProperties& queueFamily);
+
+    void logSurfaceCapabilities(const VkSurfaceCapabilitiesKHR& caps);
+    void logSurfaceFormats(std::vector<VkSurfaceFormatKHR> formats);
+    void logPresentModes(std::vector<VkPresentModeKHR> presentModes);
 }

@@ -277,3 +277,18 @@ void Logging::logDeviceQueueFamily(const string& name, const VkQueueFamilyProper
     cerr << "\t\theight: " << queueFamily.minImageTransferGranularity.height << endl;
     cerr << "\t\tdepth: " << queueFamily.minImageTransferGranularity.depth << endl;
 }
+
+
+void Logging::logSurfaceCapabilities(const VkSurfaceCapabilitiesKHR& caps)
+{
+}
+
+
+void Logging::logSurfaceFormats(std::vector<VkSurfaceFormatKHR> formats)
+{
+}
+
+
+void Logging::logPresentModes(std::vector<VkPresentModeKHR> presentModes)
+{
+}

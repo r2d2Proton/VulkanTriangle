@@ -3,6 +3,8 @@
 #pragma comment(lib, "vulkan-1.lib")
 #pragma comment(lib, "glfw3.lib")
 
+#define NOMINMAX
+
 #define VK_USE_PLATFORM_WIN32_KHR
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -15,6 +17,10 @@
 #include <stdexcept>
 #include <cstdlib>
 #include <cstring>
+
+#include <cstdint>
+#include <limits>
+#include <algorithm>
 
 #include <vector>
 #include <set>
@@ -47,6 +53,14 @@ struct QueueFamilyIndices
 };
 
 
+struct SwapChainSupportDetails
+{
+    VkSurfaceCapabilitiesKHR caps;
+    std::vector<VkSurfaceFormatKHR> formats;
+    std::vector<VkPresentModeKHR> presentModes;
+};
+
+
 class VulkanTriangleApp
 {
 public:
@@ -61,11 +75,18 @@ protected:
 
     void createSurface();
 
+    SwapChainSupportDetails querySwapChainSupport(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
+    VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
+    VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
+    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& caps);
+    void createSwapChain();
+
     bool isDeviceSuitable(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
 
     QueueFamilyIndices findQueueFamilies(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
 
     uint32_t rateDeviceSuitability(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
+    bool checkDeviceExtensionSupport(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
 
     void pickPhysicalDevice();
 
@@ -108,6 +129,13 @@ private:
     VkDevice pDevice = nullptr;
 
     VkSurfaceKHR pSurface = nullptr;
+    VkSwapchainKHR pSwapChain = nullptr;
+    std::vector<VkImage> swapChainImages;
+    VkFormat swapChainImageFormat;
+    VkColorSpaceKHR swapChainColorSpace;
+    VkExtent2D swapChainExtent;
+
+    std::vector<VkImageView> swapChainImageViews;
 
     VkQueue pPresentQueue = nullptr;
     VkQueue pGraphicsQueue = nullptr;
