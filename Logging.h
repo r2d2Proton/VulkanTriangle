@@ -27,6 +27,8 @@ struct LogProfile
     bool logFormats = true;
     bool logPresentModes = true;
 
+    bool logExtensions = true;
+
     //:
 };
 
@@ -44,4 +46,6 @@ namespace Logging
     void logSurfaceCapabilities(const VkSurfaceCapabilitiesKHR& caps);
     void logSurfaceFormats(std::vector<VkSurfaceFormatKHR> formats);
     void logPresentModes(std::vector<VkPresentModeKHR> presentModes);
+
+    void logDeviceExtensions(std::vector<VkExtensionProperties> availableExtensions);
 }

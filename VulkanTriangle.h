@@ -81,10 +81,12 @@ protected:
     VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& caps);
     void createSwapChain();
     void createImageViews();
-
-    bool isDeviceSuitable(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
+    void createGraphicsPipeline();
+    VkShaderModule createShaderModule(const std::vector<char>& shaderCode);
 
     QueueFamilyIndices findQueueFamilies(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
+
+    bool isDeviceSuitable(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
 
     uint32_t rateDeviceSuitability(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
     bool checkDeviceExtensionSupport(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);

@@ -1,4 +1,5 @@
 #include "VulkanTriangle.h"
+#include "Utils.h"
 
 using std::optional;
 using std::string;
@@ -27,9 +28,27 @@ const vector<const char*> validationLayers =
     "VK_LAYER_KHRONOS_validation"
 };
 
+//#define USE_SHADER_OBJ
+
+// https://github.com/KhronosGroup/Vulkan-ValidationLayers/pull/5570
+#ifdef USE_SHADER_OBJ
+const char* VK_EXT_SHADER_OBJ = "VK_EXT_shader_object";
+const char* VK_EXT_EXTENDED_DYNAMIC_STATE = "VK_EXT_extended_dynamic_state";
+const char* VK_EXT_EXTENDED_DYNAMIC_STATE2 = "VK_EXT_extended_dynamic_state2";
+const char* VK_EXT_EXTENDED_DYNAMIC_STATE3 = "VK_EXT_extended_dynamic_state3";
+const char* VK_EXT_VERTEX_INPUT_DYNAMIC_STATE = "VK_EXT_vertex_input_dynamic_state";
+#endif
+
 const vector<const char*> deviceExtensions =
 {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
+#if defined WIN32 && defined USE_SHADER_OBJ
+    , VK_EXT_SHADER_OBJ
+    , VK_EXT_EXTENDED_DYNAMIC_STATE
+    , VK_EXT_EXTENDED_DYNAMIC_STATE2
+    , VK_EXT_EXTENDED_DYNAMIC_STATE3
+    , VK_EXT_VERTEX_INPUT_DYNAMIC_STATE
+#endif
 };
 
 
@@ -84,6 +103,7 @@ void VulkanTriangleApp::initVulkan()
     createLogicalDevice();
     createSwapChain();
     createImageViews();
+    createGraphicsPipeline();
 }
 
 
@@ -275,60 +295,55 @@ void VulkanTriangleApp::createImageViews()
 }
 
 
-bool VulkanTriangleApp::isDeviceSuitable(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile)
+void VulkanTriangleApp::createGraphicsPipeline()
 {
-    VkPhysicalDeviceProperties deviceProperties;
-    vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
+    const char* ndcVertShaderFilename = "shaders/ndcVert.spv";
+    const char* ndcFragShaderFilename = "shaders/ndcFrag.spv";
+    const char* vertexColorVertFilename = "shaders/vertexColorVert.spv";
+    const char* vertexColorFragFilename = "shaders/vertexColorFrag.spv";
 
-    if (logProfile.logProps) {
-        Logging::logDeviceProps(deviceProperties);
+    auto vertShaderCode = Utils::readFile(ndcVertShaderFilename);
+    auto fragShaderCode = Utils::readFile(ndcFragShaderFilename);
+
+    // compilation from byteCode to machineCode for execution on the GPU does not happen until it is created in the pipeline
+    VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+    VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+
+    // assign shader to specific pipeline stage (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | ...)
+    VkPipelineShaderStageCreateInfo vertPipelineShaderStageInfo{};
+    vertPipelineShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertPipelineShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertPipelineShaderStageInfo.module = vertShaderModule;
+    vertPipelineShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragPipelineShaderStageInfo{};
+    fragPipelineShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragPipelineShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragPipelineShaderStageInfo.module = fragShaderModule;
+    fragPipelineShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo shaderStages[] = {vertPipelineShaderStageInfo, fragPipelineShaderStageInfo };
+
+
+    // cleanup shader modules
+    vkDestroyShaderModule(pDevice, vertShaderModule, nullptr);
+    vkDestroyShaderModule(pDevice, fragShaderModule, nullptr);
+}
+
+
+VkShaderModule VulkanTriangleApp::createShaderModule(const std::vector<char>& shaderCode)
+{
+    VkShaderModuleCreateInfo shaderModuleCreateInfo{};
+    shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    shaderModuleCreateInfo.codeSize = shaderCode.size();
+    shaderModuleCreateInfo.pCode = reinterpret_cast<const uint32_t*>(shaderCode.data());
+
+    VkShaderModule shaderModule{};
+    if (!vkCreateShaderModule(pDevice, &shaderModuleCreateInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+        throw runtime_error("failed to create shader module");
     }
 
-    if (logProfile.logLimits) {
-        Logging::logDeviceLimits(deviceProperties.limits);
-    }
-
-    if (logProfile.logSparseProps) {
-        Logging::logDeviceSparseProps(deviceProperties.sparseProperties);
-    }
-
-    VkPhysicalDeviceFeatures deviceFeatures;
-    vkGetPhysicalDeviceFeatures(physicalDevice, &deviceFeatures);
-
-    if (logProfile.logFeatures) {
-        Logging::logDeviceFeatures(deviceFeatures);
-    }
-
-    // need geometry shader
-    if (!deviceFeatures.geometryShader)
-        return false;
-
-    // need swapchain
-    if (!checkDeviceExtensionSupport(physicalDevice, logProfile))
-        return false;
-
-    bool swapChainAdequate = false;
-    SwapChainSupportDetails swapChainDetails = querySwapChainSupport(physicalDevice, logProfile);
-    swapChainAdequate = !swapChainDetails.formats.empty() && !swapChainDetails.presentModes.empty();
-
-    if (!swapChainAdequate)
-        return false;
-
-    queueFamilyIndices = findQueueFamilies(physicalDevice, logProfile);
-
-    // need graphics queue
-    if (!queueFamilyIndices.HasGraphicsQueue())
-        return false;
-
-    // need present queue
-    if (!queueFamilyIndices.HasPresentQueue())
-        return false;
-
-    // need compute queue
-    if (!queueFamilyIndices.HasComputeQueue())
-        return false;
-
-    return true;
+    return shaderModule;
 }
 
 
@@ -372,6 +387,64 @@ QueueFamilyIndices VulkanTriangleApp::findQueueFamilies(const VkPhysicalDevice& 
     }
 
     return queueIndices;
+}
+
+
+bool VulkanTriangleApp::isDeviceSuitable(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile)
+{
+    VkPhysicalDeviceProperties deviceProperties;
+    vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
+
+    if (logProfile.logProps) {
+        Logging::logDeviceProps(deviceProperties);
+    }
+
+    if (logProfile.logLimits) {
+        Logging::logDeviceLimits(deviceProperties.limits);
+    }
+
+    if (logProfile.logSparseProps) {
+        Logging::logDeviceSparseProps(deviceProperties.sparseProperties);
+    }
+
+    VkPhysicalDeviceFeatures deviceFeatures;
+    vkGetPhysicalDeviceFeatures(physicalDevice, &deviceFeatures);
+
+    if (logProfile.logFeatures) {
+        Logging::logDeviceFeatures(deviceFeatures);
+    }
+
+    // geometry shader lacks performance (VkPhysicalDeviceFeatures::geometryShader)
+    // need tessellationShader
+    if (!deviceFeatures.tessellationShader)
+        return false;
+
+    // need swapchain
+    if (!checkDeviceExtensionSupport(physicalDevice, logProfile))
+        return false;
+
+    bool swapChainAdequate = false;
+    SwapChainSupportDetails swapChainDetails = querySwapChainSupport(physicalDevice, logProfile);
+    swapChainAdequate = !swapChainDetails.formats.empty() && !swapChainDetails.presentModes.empty();
+
+    if (!swapChainAdequate)
+        return false;
+
+    queueFamilyIndices = findQueueFamilies(physicalDevice, logProfile);
+
+    // need graphics queue
+    if (!queueFamilyIndices.HasGraphicsQueue())
+        return false;
+
+    // need present queue
+    if (!queueFamilyIndices.HasPresentQueue())
+        return false;
+
+    // need compute queue
+    if (!queueFamilyIndices.HasComputeQueue())
+        return false;
+
+    return true;
 }
 
 
@@ -448,6 +521,9 @@ bool VulkanTriangleApp::checkDeviceExtensionSupport(const VkPhysicalDevice& phys
 
     vector<VkExtensionProperties> availableExtensions(extensionCount);
     vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, availableExtensions.data());
+
+    if (logProfile.logExtensions)
+        Logging::logDeviceExtensions(availableExtensions);
 
     set<string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
     for (const auto& extension : availableExtensions)

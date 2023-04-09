@@ -268,7 +268,7 @@ void Logging::logDeviceFeatures(const VkPhysicalDeviceFeatures& deviceFeatures)
 
 void Logging::logDeviceQueueFamily(const string& name, const VkQueueFamilyProperties& queueFamily)
 {
-    cerr << "PhysicalDevice Queue Family " << name << endl;
+    cerr << "PhysicalDevice Queue Family" << name << endl;
     cerr << "\tqueueFlags: " << queueFamily.queueFlags << endl;
     cerr << "\tqueueCount: " << queueFamily.queueCount << endl;
     cerr << "\ttimestampValidBits: " << queueFamily.timestampValidBits << endl;
@@ -292,3 +292,14 @@ void Logging::logSurfaceFormats(std::vector<VkSurfaceFormatKHR> formats)
 void Logging::logPresentModes(std::vector<VkPresentModeKHR> presentModes)
 {
 }
+
+
+void Logging::logDeviceExtensions(std::vector<VkExtensionProperties> availableExtensions)
+{
+    cerr << "PhysicalDevice Extensions" << endl;
+    for (const VkExtensionProperties& extensionProperties : availableExtensions)
+    {
+        cerr << "\textension: " << extensionProperties.extensionName << " : " << extensionProperties.specVersion << endl;
+    }
+}
+

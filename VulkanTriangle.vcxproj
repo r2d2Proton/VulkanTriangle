@@ -145,11 +145,19 @@
   <ItemGroup>
     <ClCompile Include="Logging.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Utils.cpp" />
     <ClCompile Include="VulkanTriangle.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Logging.h" />
+    <ClInclude Include="Utils.h" />
     <ClInclude Include="VulkanTriangle.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\ndc.frag" />
+    <None Include="shaders\ndc.vert" />
+    <None Include="shaders\vertexColor.frag" />
+    <None Include="shaders\vertexColor.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
