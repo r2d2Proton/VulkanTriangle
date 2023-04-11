@@ -52,30 +52,6 @@ const vector<const char*> deviceExtensions =
 };
 
 
-VkResult CreateDebugUtilsMessengerEXT
-(
-    VkInstance pInstance,
-    const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkDebugUtilsMessengerEXT* pDebugMessenger
-)
-{
-    auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(pInstance, "vkCreateDebugUtilsMessengerEXT");
-    if (func != nullptr)
-        return func(pInstance, pCreateInfo, pAllocator, pDebugMessenger);
-
-    return VK_ERROR_EXTENSION_NOT_PRESENT;
-}
-
-
-void DestroyDebugUtilsMessengerEXT(VkInstance pInstance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator)
-{
-    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(pInstance, "vkDestroyDebugUtilsMessengerEXT");
-    if (func != nullptr)
-        func(pInstance, debugMessenger, pAllocator);
-}
-
-
 void VulkanTriangleApp::run()
 {
     initWindow();
@@ -106,6 +82,96 @@ void VulkanTriangleApp::initVulkan()
     createRenderPass();
     createGraphicsPipeline();
     createFramebuffers();
+    createCommandPool();
+}
+
+
+void VulkanTriangleApp::mainLoop()
+{
+    while (!glfwWindowShouldClose(pWindow))
+    {
+        glfwPollEvents();
+    }
+}
+
+
+void VulkanTriangleApp::cleanUp()
+{
+    for (auto pFramebuffer : swapChainFramebuffers)
+        vkDestroyFramebuffer(pDevice, pFramebuffer, nullptr);
+
+    vkDestroyPipeline(pDevice, pGraphicsPipeline, nullptr);
+    vkDestroyPipelineLayout(pDevice, pPipelineLayout, nullptr);
+    vkDestroyRenderPass(pDevice, pRenderPass, nullptr);
+
+    for (auto imageView : swapChainImageViews)
+        vkDestroyImageView(pDevice, imageView, nullptr);
+
+    vkDestroySwapchainKHR(pDevice, pSwapChain, nullptr);
+    vkDestroyDevice(pDevice, nullptr);
+
+    if (enableValidationLayers)
+        Utils::DestroyDebugUtilsMessengerEXT(pInstance, pDebugMessenger, nullptr);
+
+    vkDestroySurfaceKHR(pInstance, pSurface, nullptr);
+    vkDestroyInstance(pInstance, nullptr);
+
+    glfwDestroyWindow(pWindow);
+    glfwTerminate();
+}
+
+
+void VulkanTriangleApp::createInstance()
+{
+    if (enableValidationLayers && !checkValidationLayerSupport())
+    {
+        throw runtime_error("validation layers requsted, but not available!");
+    }
+
+    VkApplicationInfo appInfo{};
+    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    appInfo.pApplicationName = "Hello Triangle";
+    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.pEngineName = "No Engine";
+    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.apiVersion = VK_API_VERSION_1_0;
+
+    VkInstanceCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    createInfo.pApplicationInfo = &appInfo;
+
+    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
+    if (enableValidationLayers)
+    {
+        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+        createInfo.ppEnabledLayerNames = validationLayers.data();
+
+        populateDebugMessengerCreateInfo(debugCreateInfo);
+        createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debugCreateInfo;
+    }
+
+    auto extensions = getRequiredExtensions();
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+    createInfo.ppEnabledExtensionNames = extensions.data();
+
+    if (vkCreateInstance(&createInfo, nullptr, &pInstance) != VK_SUCCESS)
+    {
+        throw runtime_error("failed to create instance");
+    }
+}
+
+
+void VulkanTriangleApp::setupDebugMessenger()
+{
+    if (!enableValidationLayers) return;
+
+    VkDebugUtilsMessengerCreateInfoEXT createInfo{};
+    populateDebugMessengerCreateInfo(createInfo);
+
+    if (Utils::CreateDebugUtilsMessengerEXT(pInstance, &createInfo, nullptr, &pDebugMessenger) != VK_SUCCESS)
+    {
+        throw runtime_error("failed to set up debug messenger");
+    }
 }
 
 
@@ -116,93 +182,42 @@ void VulkanTriangleApp::createSurface()
 }
 
 
-SwapChainSupportDetails VulkanTriangleApp::querySwapChainSupport(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile)
+void VulkanTriangleApp::pickPhysicalDevice()
 {
-    // min/max swapchain images, min/max image width/height
-    // surface formats (pixel format, colorspace)
-    // presentation modes
-    SwapChainSupportDetails swapChainDetails{};
+    LogProfile logProfile;
 
-    // query surface capabilities
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, pSurface, &swapChainDetails.caps);
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(pInstance, &deviceCount, nullptr);
 
-    // query supported surface formats
-    uint32_t formatCount = 0;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, pSurface, &formatCount, nullptr);
-    if (formatCount != 0)
+    if (deviceCount == 0)
+        throw runtime_error("failed to find GPUs with Vulkan support!");
+
+    vector<VkPhysicalDevice> devices(deviceCount);
+    vkEnumeratePhysicalDevices(pInstance, &deviceCount, devices.data());
+
+    multimap<uint32_t, VkPhysicalDevice> candidates;
+    for (const auto& device : devices)
     {
-        swapChainDetails.formats.resize(formatCount);
-        vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, pSurface, &formatCount, swapChainDetails.formats.data());
+        uint32_t score = rateDeviceSuitability(device, logProfile);
+        candidates.insert(std::make_pair(score, device));
     }
 
-    // query presentation modes
-    uint32_t presentModeCount = 0;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, pSurface, &presentModeCount, nullptr);
-    if (presentModeCount != 0)
-    {
-        swapChainDetails.presentModes.resize(presentModeCount);
-        vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, pSurface, &presentModeCount, swapChainDetails.presentModes.data());
-    }
+    // find the best candidate
+    if (candidates.rbegin()->first > 0)
+        pPhysicalDevice = candidates.rbegin()->second;
 
-    if (logProfile.logCaps)
-        Logging::logSurfaceCapabilities(swapChainDetails.caps);
-
-    if (logProfile.logFormats)
-        Logging::logSurfaceFormats(swapChainDetails.formats);
-
-    if (logProfile.logPresentModes)
-        Logging::logPresentModes(swapChainDetails.presentModes);
-
-    return swapChainDetails;
+    if (pPhysicalDevice == VK_NULL_HANDLE)
+        throw runtime_error("failed to find suitable GPU");
 }
 
 
-// surface format (color depth)
-// presentation mode (swapping)
-// swap extent (resolution)
-VkSurfaceFormatKHR VulkanTriangleApp::chooseSwapSurfaceFormat(const vector<VkSurfaceFormatKHR>& availableFormats)
+void VulkanTriangleApp::createLogicalDevice()
 {
-    for (const auto& availableFormat : availableFormats)
-    {
-        if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-            return availableFormat;
-    }
+    LogProfile logProfile;
 
-    return availableFormats[0];
-}
-
-
-// VK_PRESENT_MODE_IMMEDIATE_KHR           possible tearing
-// VK_PRESENT_MODE_FIFO_KHR                swapchain queue images taken from front of the queue - program waits if queue is full (guaranteed)
-// VK_PRESENT_MODE_FIFO_RELEAXED_KHR
-// VK_PRESENT_MODE_MAILBOX_KHR             can render frames as fast as possible without tearing with fewer vsync latency issues
-VkPresentModeKHR VulkanTriangleApp::chooseSwapPresentMode(const vector<VkPresentModeKHR>& availablePresentModes)
-{
-#ifdef WIN32
-    for (const auto& availablePresentMode : availablePresentModes)
-    {
-        if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
-            return availablePresentMode;
-    }
-#endif
-
-    return VK_PRESENT_MODE_FIFO_KHR;
-}
-
-
-VkExtent2D VulkanTriangleApp::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& caps)
-{
-    if (caps.currentExtent.width != std::numeric_limits<uint32_t>::max())
-        return caps.currentExtent;
-
-    int width = 0, height = 0;
-    glfwGetFramebufferSize(pWindow, &width, &height);
-
-    VkExtent2D actualExtent = { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
-    actualExtent.width = std::clamp(actualExtent.width, caps.minImageExtent.width, caps.maxImageExtent.width);
-    actualExtent.height = std::clamp(actualExtent.height, caps.minImageExtent.height, caps.maxImageExtent.height);
-
-    return actualExtent;
+    createGraphicsQueue(queueFamilyIndices);
+    createComputeQueue(queueFamilyIndices);
+    createXferQueue(queueFamilyIndices);
 }
 
 
@@ -355,37 +370,6 @@ void VulkanTriangleApp::createRenderPass()
 }
 
 
-void VulkanTriangleApp::createFramebuffers()
-{
-    // create a framebuffer for each imageView in the swapChain
-    swapChainFramebuffers.resize(swapChainImageViews.size());
-
-    for (size_t i = 0; i < swapChainImageViews.size(); ++i)
-    {
-        // a temporary to allow for colorBuffer, depthBuffer, etc. ?
-        // attachmentCount needs to match array size
-        // layers stereoscopic rendering?
-        VkImageView attachments[] =
-        {
-            swapChainImageViews[i]
-        };
-
-        VkFramebufferCreateInfo framebufferCreateInfo{};
-        framebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferCreateInfo.renderPass = pRenderPass;
-        framebufferCreateInfo.attachmentCount = 1;
-        framebufferCreateInfo.pAttachments = attachments;
-        framebufferCreateInfo.width = swapChainExtent.width;
-        framebufferCreateInfo.height = swapChainExtent.height;
-        framebufferCreateInfo.layers = 1;
-
-        if (vkCreateFramebuffer(pDevice, &framebufferCreateInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS)
-            throw runtime_error("failed to create framebuffer");
-    }
-
-}
-
-
 void VulkanTriangleApp::createGraphicsPipeline()
 {
     const char* ndcVertShaderFilename = "shaders/ndcVert.spv";
@@ -413,7 +397,7 @@ void VulkanTriangleApp::createGraphicsPipeline()
     fragPipelineShaderStageInfo.module = fragShaderModule;
     fragPipelineShaderStageInfo.pName = "main";
 
-    VkPipelineShaderStageCreateInfo shaderStages[] = {vertPipelineShaderStageInfo, fragPipelineShaderStageInfo };
+    VkPipelineShaderStageCreateInfo shaderStages[] = { vertPipelineShaderStageInfo, fragPipelineShaderStageInfo };
 
     vector<VkVertexInputBindingDescription> vertexInputBindings;
     vector<VkVertexInputAttributeDescription> vertexInputAttrDescriptions;
@@ -553,88 +537,101 @@ void VulkanTriangleApp::createGraphicsPipeline()
 }
 
 
-VkShaderModule VulkanTriangleApp::createShaderModule(const vector<unsigned char>& shaderCode)
+void VulkanTriangleApp::createFramebuffers()
 {
-    VkShaderModuleCreateInfo shaderModuleCreateInfo{};
-    shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    shaderModuleCreateInfo.codeSize = shaderCode.size();
-    shaderModuleCreateInfo.pCode = reinterpret_cast<const uint32_t*>(shaderCode.data());
+    // create a framebuffer for each imageView in the swapChain
+    swapChainFramebuffers.resize(swapChainImageViews.size());
 
-    VkShaderModule shaderModule;
-    if (vkCreateShaderModule(pDevice, &shaderModuleCreateInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-        throw runtime_error("failed to create shader module");
-    }
-
-    return shaderModule;
-}
-
-
-void VulkanTriangleApp::disableAlphaBlending(VkPipelineColorBlendAttachmentState& colorBlendAttachmentState)
-{
-    colorBlendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachmentState.blendEnable = VK_FALSE;
-    colorBlendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
-}
-
-
-void VulkanTriangleApp::enableAlphaBlending(VkPipelineColorBlendAttachmentState& colorBlendAttachmentState)
-{
-    colorBlendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachmentState.blendEnable = VK_TRUE;
-    colorBlendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorBlendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
-}
-
-
-QueueFamilyIndices VulkanTriangleApp::findQueueFamilies(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile)
-{
-    QueueFamilyIndices queueIndices;
-
-    uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
-
-    vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies.data());
-
-    int i = 0;
-    for (const auto& queueFamily : queueFamilies)
+    for (size_t i = 0; i < swapChainImageViews.size(); ++i)
     {
-        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-            queueIndices.graphicsFamily = i;
+        // a temporary to allow for colorBuffer, depthBuffer, etc. ?
+        // attachmentCount needs to match array size
+        // layers stereoscopic rendering?
+        VkImageView attachments[] =
+        {
+            swapChainImageViews[i]
+        };
 
-            VkBool32 presentSupport = false;
-            vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, pSurface, &presentSupport);
+        VkFramebufferCreateInfo framebufferCreateInfo{};
+        framebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferCreateInfo.renderPass = pRenderPass;
+        framebufferCreateInfo.attachmentCount = 1;
+        framebufferCreateInfo.pAttachments = attachments;
+        framebufferCreateInfo.width = swapChainExtent.width;
+        framebufferCreateInfo.height = swapChainExtent.height;
+        framebufferCreateInfo.layers = 1;
 
-            if (presentSupport)
-                queueIndices.presentFamily = i;
-
-            if (logProfile.loqGraphicsQueue)
-                Logging::logDeviceQueueFamily("Graphics", queueFamily);
-        }
-        else if (queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT) {
-            queueIndices.computeFamily = i;
-            if (logProfile.logComputeQueue)
-                Logging::logDeviceQueueFamily("Compute", queueFamily);
-        }
-        else if (queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT) {
-            queueIndices.xferFamily = i;
-            if (logProfile.logXferQueue)
-                Logging::logDeviceQueueFamily("Transfer", queueFamily);
-        }
-
-        ++i;
+        if (vkCreateFramebuffer(pDevice, &framebufferCreateInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS)
+            throw runtime_error("failed to create framebuffer");
     }
 
-    return queueIndices;
+}
+
+
+void VulkanTriangleApp::createCommandPool()
+{
+}
+
+
+bool VulkanTriangleApp::checkValidationLayerSupport()
+{
+    uint32_t layerCount = 0;
+    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+
+    vector<VkLayerProperties> availableLayers(layerCount);
+    vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+    for (const char* layerName : validationLayers)
+    {
+        bool layerFound = false;
+
+        for (const auto& layerProperties : availableLayers)
+        {
+            if (strcmp(layerName, layerProperties.layerName) == 0)
+            {
+                layerFound = true;
+                break;
+            }
+        }
+
+        if (layerFound)
+            return true;
+    }
+
+    return false;
+}
+
+
+void VulkanTriangleApp::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo)
+{
+    createInfo = {};
+    createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+
+    createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT
+        | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
+        | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+
+    createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
+        | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
+        | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+
+    createInfo.pfnUserCallback = debugCallback;
+    createInfo.pUserData = this;
+}
+
+
+vector<const char*> VulkanTriangleApp::getRequiredExtensions()
+{
+    uint32_t extCount = 0;
+    const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&extCount);
+    vector<const char*> extensions(glfwExtensions, glfwExtensions + extCount);
+
+    if (enableValidationLayers)
+    {
+        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    }
+
+    return extensions;
 }
 
 
@@ -783,42 +780,46 @@ bool VulkanTriangleApp::checkDeviceExtensionSupport(const VkPhysicalDevice& phys
 }
 
 
-void VulkanTriangleApp::pickPhysicalDevice()
+QueueFamilyIndices VulkanTriangleApp::findQueueFamilies(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile)
 {
-    LogProfile logProfile;
+    QueueFamilyIndices queueIndices;
 
-    uint32_t deviceCount = 0;
-    vkEnumeratePhysicalDevices(pInstance, &deviceCount, nullptr);
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
 
-    if (deviceCount == 0)
-        throw runtime_error("failed to find GPUs with Vulkan support!");
+    vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies.data());
 
-    vector<VkPhysicalDevice> devices(deviceCount);
-    vkEnumeratePhysicalDevices(pInstance, &deviceCount, devices.data());
-
-    multimap<uint32_t, VkPhysicalDevice> candidates;
-    for (const auto& device : devices)
+    int i = 0;
+    for (const auto& queueFamily : queueFamilies)
     {
-        uint32_t score = rateDeviceSuitability(device, logProfile);
-        candidates.insert(std::make_pair(score, device));
+        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+            queueIndices.graphicsFamily = i;
+
+            VkBool32 presentSupport = false;
+            vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, pSurface, &presentSupport);
+
+            if (presentSupport)
+                queueIndices.presentFamily = i;
+
+            if (logProfile.loqGraphicsQueue)
+                Logging::logDeviceQueueFamily("Graphics", queueFamily);
+        }
+        else if (queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT) {
+            queueIndices.computeFamily = i;
+            if (logProfile.logComputeQueue)
+                Logging::logDeviceQueueFamily("Compute", queueFamily);
+        }
+        else if (queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT) {
+            queueIndices.xferFamily = i;
+            if (logProfile.logXferQueue)
+                Logging::logDeviceQueueFamily("Transfer", queueFamily);
+        }
+
+        ++i;
     }
 
-    // find the best candidate
-    if (candidates.rbegin()->first > 0)
-        pPhysicalDevice = candidates.rbegin()->second;
-
-    if (pPhysicalDevice == VK_NULL_HANDLE)
-        throw runtime_error("failed to find suitable GPU");
-}
-
-
-void VulkanTriangleApp::createLogicalDevice()
-{
-    LogProfile logProfile;
-
-    createGraphicsQueue(queueFamilyIndices);
-    createComputeQueue(queueFamilyIndices);
-    createXferQueue(queueFamilyIndices);
+    return queueIndices;
 }
 
 
@@ -878,6 +879,138 @@ void VulkanTriangleApp::createXferQueue(const QueueFamilyIndices& queueIndices)
 }
 
 
+SwapChainSupportDetails VulkanTriangleApp::querySwapChainSupport(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile)
+{
+    // min/max swapchain images, min/max image width/height
+    // surface formats (pixel format, colorspace)
+    // presentation modes
+    SwapChainSupportDetails swapChainDetails{};
+
+    // query surface capabilities
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, pSurface, &swapChainDetails.caps);
+
+    // query supported surface formats
+    uint32_t formatCount = 0;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, pSurface, &formatCount, nullptr);
+    if (formatCount != 0)
+    {
+        swapChainDetails.formats.resize(formatCount);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, pSurface, &formatCount, swapChainDetails.formats.data());
+    }
+
+    // query presentation modes
+    uint32_t presentModeCount = 0;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, pSurface, &presentModeCount, nullptr);
+    if (presentModeCount != 0)
+    {
+        swapChainDetails.presentModes.resize(presentModeCount);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, pSurface, &presentModeCount, swapChainDetails.presentModes.data());
+    }
+
+    if (logProfile.logCaps)
+        Logging::logSurfaceCapabilities(swapChainDetails.caps);
+
+    if (logProfile.logFormats)
+        Logging::logSurfaceFormats(swapChainDetails.formats);
+
+    if (logProfile.logPresentModes)
+        Logging::logPresentModes(swapChainDetails.presentModes);
+
+    return swapChainDetails;
+}
+
+
+// surface format (color depth)
+// presentation mode (swapping)
+// swap extent (resolution)
+VkSurfaceFormatKHR VulkanTriangleApp::chooseSwapSurfaceFormat(const vector<VkSurfaceFormatKHR>& availableFormats)
+{
+    for (const auto& availableFormat : availableFormats)
+    {
+        if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+            return availableFormat;
+    }
+
+    return availableFormats[0];
+}
+
+
+// VK_PRESENT_MODE_IMMEDIATE_KHR           possible tearing
+// VK_PRESENT_MODE_FIFO_KHR                swapchain queue images taken from front of the queue - program waits if queue is full (guaranteed)
+// VK_PRESENT_MODE_FIFO_RELEAXED_KHR
+// VK_PRESENT_MODE_MAILBOX_KHR             can render frames as fast as possible without tearing with fewer vsync latency issues
+VkPresentModeKHR VulkanTriangleApp::chooseSwapPresentMode(const vector<VkPresentModeKHR>& availablePresentModes)
+{
+#ifdef WIN32
+    for (const auto& availablePresentMode : availablePresentModes)
+    {
+        if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
+            return availablePresentMode;
+    }
+#endif
+
+    return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+
+VkExtent2D VulkanTriangleApp::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& caps)
+{
+    if (caps.currentExtent.width != std::numeric_limits<uint32_t>::max())
+        return caps.currentExtent;
+
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(pWindow, &width, &height);
+
+    VkExtent2D actualExtent = { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
+    actualExtent.width = std::clamp(actualExtent.width, caps.minImageExtent.width, caps.maxImageExtent.width);
+    actualExtent.height = std::clamp(actualExtent.height, caps.minImageExtent.height, caps.maxImageExtent.height);
+
+    return actualExtent;
+}
+
+
+VkShaderModule VulkanTriangleApp::createShaderModule(const vector<unsigned char>& shaderCode)
+{
+    VkShaderModuleCreateInfo shaderModuleCreateInfo{};
+    shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    shaderModuleCreateInfo.codeSize = shaderCode.size();
+    shaderModuleCreateInfo.pCode = reinterpret_cast<const uint32_t*>(shaderCode.data());
+
+    VkShaderModule shaderModule;
+    if (vkCreateShaderModule(pDevice, &shaderModuleCreateInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+        throw runtime_error("failed to create shader module");
+    }
+
+    return shaderModule;
+}
+
+
+void VulkanTriangleApp::enableAlphaBlending(VkPipelineColorBlendAttachmentState& colorBlendAttachmentState)
+{
+    colorBlendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachmentState.blendEnable = VK_TRUE;
+    colorBlendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
+}
+
+
+void VulkanTriangleApp::disableAlphaBlending(VkPipelineColorBlendAttachmentState& colorBlendAttachmentState)
+{
+    colorBlendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachmentState.blendEnable = VK_FALSE;
+    colorBlendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
+}
+
+
 VKAPI_ATTR VkBool32 VKAPI_CALL VulkanTriangleApp::debugCallback
 (
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -888,155 +1021,4 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanTriangleApp::debugCallback
 {
     cerr << "validation layer: " << pCallbackData->pMessage << endl;
     return VK_FALSE;
-}
-
-
-void VulkanTriangleApp::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo)
-{
-    createInfo = {};
-    createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-
-    createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT
-        | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
-        | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-
-    createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
-        | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
-        | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-
-    createInfo.pfnUserCallback = debugCallback;
-    createInfo.pUserData = this;
-}
-
-
-void VulkanTriangleApp::setupDebugMessenger()
-{
-    if (!enableValidationLayers) return;
-
-    VkDebugUtilsMessengerCreateInfoEXT createInfo{};
-    populateDebugMessengerCreateInfo(createInfo);
-
-    if (CreateDebugUtilsMessengerEXT(pInstance, &createInfo, nullptr, &pDebugMessenger) != VK_SUCCESS)
-    {
-        throw runtime_error("failed to set up debug messenger");
-    }
-}
-
-
-bool VulkanTriangleApp::checkValidationLayerSupport()
-{
-    uint32_t layerCount = 0;
-    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-
-    vector<VkLayerProperties> availableLayers(layerCount);
-    vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
-
-    for (const char* layerName : validationLayers)
-    {
-        bool layerFound = false;
-
-        for (const auto& layerProperties : availableLayers)
-        {
-            if (strcmp(layerName, layerProperties.layerName) == 0)
-            {
-                layerFound = true;
-                break;
-            }
-        }
-
-        if (layerFound)
-            return true;
-    }
-
-    return false;
-}
-
-
-vector<const char*> VulkanTriangleApp::getRequiredExtensions()
-{
-    uint32_t extCount = 0;
-    const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&extCount);
-    vector<const char*> extensions(glfwExtensions, glfwExtensions + extCount);
-
-    if (enableValidationLayers)
-    {
-        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    }
-
-    return extensions;
-}
-
-
-void VulkanTriangleApp::createInstance()
-{
-    if (enableValidationLayers && !checkValidationLayerSupport())
-    {
-        throw runtime_error("validation layers requsted, but not available!");
-    }
-
-    VkApplicationInfo appInfo{};
-    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "Hello Triangle";
-    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.pEngineName = "No Engine";
-    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_0;
-
-    VkInstanceCreateInfo createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    createInfo.pApplicationInfo = &appInfo;
-
-    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
-    if (enableValidationLayers)
-    {
-        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-        createInfo.ppEnabledLayerNames = validationLayers.data();
-
-        populateDebugMessengerCreateInfo(debugCreateInfo);
-        createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debugCreateInfo;
-    }
-
-    auto extensions = getRequiredExtensions();
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-    createInfo.ppEnabledExtensionNames = extensions.data();
-
-    if (vkCreateInstance(&createInfo, nullptr, &pInstance) != VK_SUCCESS)
-    {
-        throw runtime_error("failed to create instance");
-    }
-}
-
-
-void VulkanTriangleApp::mainLoop()
-{
-    while (!glfwWindowShouldClose(pWindow))
-    {
-        glfwPollEvents();
-    }
-}
-
-
-void VulkanTriangleApp::cleanUp()
-{
-    for (auto pFramebuffer : swapChainFrameBuffers)
-        vkDestroyFramebuffer(pDevice, pFramebuffer, nullptr);
-
-    vkDestroyPipeline(pDevice, pGraphicsPipeline, nullptr);
-    vkDestroyPipelineLayout(pDevice, pPipelineLayout, nullptr);
-    vkDestroyRenderPass(pDevice, pRenderPass, nullptr);
-
-    for (auto imageView : swapChainImageViews)
-        vkDestroyImageView(pDevice, imageView, nullptr);
-
-    vkDestroySwapchainKHR(pDevice, pSwapChain, nullptr);
-    vkDestroyDevice(pDevice, nullptr);
-
-    if (enableValidationLayers)
-        DestroyDebugUtilsMessengerEXT(pInstance, pDebugMessenger, nullptr);
-
-    vkDestroySurfaceKHR(pInstance, pSurface, nullptr);
-    vkDestroyInstance(pInstance, nullptr);
-
-    glfwDestroyWindow(pWindow);
-    glfwTerminate();
 }

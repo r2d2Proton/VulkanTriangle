@@ -72,36 +72,62 @@ protected:
     void initWindow();
 
     void initVulkan();
-
+    void createInstance();
+    void setupDebugMessenger();
     void createSurface();
+    void pickPhysicalDevice();
+    void createLogicalDevice();
+    void createSwapChain();
+    void createImageViews();
+    void createRenderPass();
+    void createGraphicsPipeline();
+    void createFramebuffers();
+    void createCommandPool();
 
+    void mainLoop();
+
+    void cleanUp();
+
+
+    // createInstance
+    bool checkValidationLayerSupport();
+    void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
+    std::vector<const char*> getRequiredExtensions();
+
+    // setupDebugMessenger::populateDebugMessengerCreateInfo
+
+    // createSurface
+
+    // pickPhysicalDevice
+    bool isDeviceSuitable(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
+    uint32_t rateDeviceSuitability(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
+    bool checkDeviceExtensionSupport(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
+    QueueFamilyIndices findQueueFamilies(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
+
+    // createLogicalDevice
+    void createGraphicsQueue(const QueueFamilyIndices& queueIndices);
+    void createComputeQueue(const QueueFamilyIndices& queueIndices);
+    void createXferQueue(const QueueFamilyIndices& queueIndices);
+
+    // createSwapChain
     SwapChainSupportDetails querySwapChainSupport(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
     VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
     VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
     VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& caps);
-    void createSwapChain();
-    void createImageViews();
-    void createRenderPass();
-    void createFramebuffers();
-    void createGraphicsPipeline();
+
+    // createImageViews
+
+    // createRenderPass
+
+    // createGraphicsPipeline
     VkShaderModule createShaderModule(const std::vector<unsigned char>& shaderCode);
-    void disableAlphaBlending(VkPipelineColorBlendAttachmentState& colorBlendAttachmentState);
     void enableAlphaBlending(VkPipelineColorBlendAttachmentState& colorBlendAttachmentState);
+    void disableAlphaBlending(VkPipelineColorBlendAttachmentState& colorBlendAttachmentState);
 
-    QueueFamilyIndices findQueueFamilies(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
+    // createFramebuffers
 
-    bool isDeviceSuitable(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
+    // createCommandPool
 
-    uint32_t rateDeviceSuitability(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
-    bool checkDeviceExtensionSupport(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
-
-    void pickPhysicalDevice();
-
-    void createLogicalDevice();
-    void createPresentQueue(const QueueFamilyIndices& queueIndices);
-    void createGraphicsQueue(const QueueFamilyIndices& queueIndices);
-    void createComputeQueue(const QueueFamilyIndices& queueIndices);
-    void createXferQueue(const QueueFamilyIndices& queueIndices);
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback
     (
@@ -110,20 +136,6 @@ protected:
         const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
         void* pUserData
     );
-
-    void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
-
-    void setupDebugMessenger();
-
-    bool checkValidationLayerSupport();
-
-    std::vector<const char*> getRequiredExtensions();
-
-    void createInstance();
-
-    void mainLoop();
-
-    void cleanUp();
 
 private:
 
@@ -149,6 +161,8 @@ private:
     VkRenderPass pRenderPass = nullptr;
     VkPipelineLayout pPipelineLayout = nullptr;
     VkPipeline pGraphicsPipeline = nullptr;
+
+    VkCommandPool pCommandPool = nullptr;
 
     VkQueue pPresentQueue = nullptr;
     VkQueue pGraphicsQueue = nullptr;
