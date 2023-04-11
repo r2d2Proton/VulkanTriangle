@@ -83,6 +83,7 @@ protected:
     void createGraphicsPipeline();
     void createFramebuffers();
     void createCommandPool();
+    void createCommandBuffer();
 
     void mainLoop();
 
@@ -128,6 +129,9 @@ protected:
 
     // createCommandPool
 
+    // createCommandBuffer
+
+    void recordCommandBuffer(VkCommandBuffer pCommmandBuffer, uint32_t imageIndex);
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback
     (
@@ -163,6 +167,7 @@ private:
     VkPipeline pGraphicsPipeline = nullptr;
 
     VkCommandPool pCommandPool = nullptr;
+    VkCommandBuffer pCommandBuffer = nullptr;
 
     VkQueue pPresentQueue = nullptr;
     VkQueue pGraphicsQueue = nullptr;

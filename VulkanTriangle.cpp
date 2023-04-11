@@ -83,6 +83,7 @@ void VulkanTriangleApp::initVulkan()
     createGraphicsPipeline();
     createFramebuffers();
     createCommandPool();
+    createCommandBuffer();
 }
 
 
@@ -97,6 +98,8 @@ void VulkanTriangleApp::mainLoop()
 
 void VulkanTriangleApp::cleanUp()
 {
+    vkDestroyCommandPool(pDevice, pCommandPool, nullptr);
+
     for (auto pFramebuffer : swapChainFramebuffers)
         vkDestroyFramebuffer(pDevice, pFramebuffer, nullptr);
 
@@ -570,6 +573,90 @@ void VulkanTriangleApp::createFramebuffers()
 
 void VulkanTriangleApp::createCommandPool()
 {
+    // VK_COMMAND_POOL_CREATE_TRANSIT_BIT              - command buffers are rerecorded with new commands very often
+    // VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT - allow command buffers to be rerecorded individually without having to reset all command buffers
+    VkCommandPoolCreateInfo commandPoolCreateInfo{};
+    commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    commandPoolCreateInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+
+    if (vkCreateCommandPool(pDevice, &commandPoolCreateInfo, nullptr, &pCommandPool) != VK_SUCCESS)
+        throw runtime_error("failed to create the command pool");
+}
+
+
+void VulkanTriangleApp::createCommandBuffer()
+{
+    // VK_COMMAND_BUFFER_LEVEL_PRIMARY   - can be submitted to a queue for execution but cannot be called from other command buffers
+    // VK_COMMAND_BUFFER_LEVEL_SECONDARY - cannot be submitted directly but can be called from primary command buffers
+    VkCommandBufferAllocateInfo commandBufferAllocateInfo{};
+    commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    commandBufferAllocateInfo.commandPool = pCommandPool;
+    commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    commandBufferAllocateInfo.commandBufferCount = 1;
+
+    if (vkAllocateCommandBuffers(pDevice, &commandBufferAllocateInfo, &pCommandBuffer) != VK_SUCCESS)
+        throw runtime_error("failed to allocate command buffer");
+}
+
+
+void VulkanTriangleApp::recordCommandBuffer(VkCommandBuffer pCommmandBuffer, uint32_t imageIndex)
+{
+    // VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT      - command buffer will be rerecorded right after excution
+    // VK_COMMAND_BUFFER_USAGE_RENDER_PASS_COMTINUE_BIT - a secondary command buffer that will be entirely within a single render pass
+    // VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT     - command buffer can be resubmitted while it is also already pending execution
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = 0;
+    beginInfo.pInheritanceInfo = nullptr;
+
+    // if the command buffer was already recorded it will be implicitly reset
+    if (vkBeginCommandBuffer(pCommandBuffer, &beginInfo) != VK_SUCCESS)
+        throw runtime_error("failed to begin command buffer recording");
+
+    // starting render pass
+    VkClearValue clearColor = { {{0.0f, 0.0f, 0.0f, 1.0f}} };
+
+    // VK_SUBPASS_CONTENTS_INLINE                    - render pass commands are embedded in the primary command buffer
+    // VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS - renedr pass commands will be executed from seconday command buffers
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = pRenderPass;
+    renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
+    renderPassInfo.renderArea.offset = { 0, 0 };
+    renderPassInfo.renderArea.extent = swapChainExtent;
+
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &clearColor;
+
+    vkCmdBeginRenderPass(pCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindPipeline(pCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pGraphicsPipeline);
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(swapChainExtent.width);
+    viewport.height = static_cast<float>(swapChainExtent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(pCommandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = { 0, 0 };
+    scissor.extent = swapChainExtent;
+    vkCmdSetScissor(pCommandBuffer, 0, 1, &scissor);
+
+    // draw NDC triangle
+    // vertexCount, instanceCount, firstVertex, firstInstance
+    vkCmdDraw(pCommandBuffer, 3, 1, 0, 0);
+
+    // end render pass
+    vkCmdEndRenderPass(pCommandBuffer);
+
+    // end command buffer recording
+    if (vkEndCommandBuffer(pCommandBuffer) != VK_SUCCESS)
+        throw runtime_error("failed to end command buffer");
 }
 
 
