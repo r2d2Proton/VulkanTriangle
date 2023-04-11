@@ -324,6 +324,116 @@ void VulkanTriangleApp::createGraphicsPipeline()
 
     VkPipelineShaderStageCreateInfo shaderStages[] = {vertPipelineShaderStageInfo, fragPipelineShaderStageInfo };
 
+    vector<VkVertexInputBindingDescription> vertexInputBindings;
+    vector<VkVertexInputAttributeDescription> vertexInputAttrDescriptions;
+
+    // fixed functions - { DynamicState, VertexInput, InputAssembly, ViewportScissors, Rasterizer, Multisampling, D24S8, ColorBlending, PipelineLayout
+
+    // DynamicState - viewport size, ling width, blend constants
+    // keep these out of the pipeline state and specify these at draw time
+    vector<VkDynamicState> dynamicStates =
+    {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamicStateCreateInfo{};
+    dynamicStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicStateCreateInfo.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicStateCreateInfo.pDynamicStates = dynamicStates.data();
+
+    // VertexInput
+    VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo{};
+    vertexInputStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputStateCreateInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexInputBindings.size());
+    vertexInputStateCreateInfo.pVertexBindingDescriptions = vertexInputBindings.data();
+    vertexInputStateCreateInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputAttrDescriptions.size());
+    vertexInputStateCreateInfo.pVertexAttributeDescriptions = vertexInputAttrDescriptions.data();
+
+    // Input Assembly
+    // can restart topology with indices 0xFFFF or 0xFFFFFFFF
+    VkPipelineInputAssemblyStateCreateInfo inputAssemblyCreateInfo{};
+    inputAssemblyCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssemblyCreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssemblyCreateInfo.primitiveRestartEnable = VK_FALSE;
+
+    // Viewports and Scissor Rects
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float)swapChainExtent.width;
+    viewport.height = (float)swapChainExtent.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor{};
+    scissor.offset = { 0, 0 };
+    scissor.extent = swapChainExtent;
+
+    // viewport and scissors are set dynmically
+    // but count needs to be set (if I understood correctly)
+    VkPipelineViewportStateCreateInfo viewportStateCreateInfo{};
+    viewportStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportStateCreateInfo.viewportCount = 1;
+    viewportStateCreateInfo.scissorCount = 1;
+
+    // Rasterizer
+    // depthClampEnable keeps fragmenst outside of near/far planes
+    // rasterizerDiscardEnable does not allow geometry pass through the rasterizer stage
+    // polgonMode : VK_POLYGON_MODE_FILL | VK_POLYGON_MODE_LINE | VK_POLYGON_MODE_POINT | VK_POLOYGON_FILL_RECTANGLE_NV
+    // lineWidth greater than 1.0 needs to enable GPU feature wideLines
+    // cullMode : VK_CULL_MODE_BACK_BIT | VK_CULL_MODE_FRONT_BIT | VK_CULL_MODE_NONE | VK_CULL_MODE_FRONT_AND_BACK
+    // frontFace : VK_FRONT_FACE_CLOCKWISE | VK_FRONT_FACE_COUNTER_CLOCKWISE
+    VkPipelineRasterizationStateCreateInfo rasterizerStateCreateInfo{};
+    rasterizerStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizerStateCreateInfo.depthClampEnable = VK_FALSE;
+    rasterizerStateCreateInfo.rasterizerDiscardEnable = VK_FALSE;
+    rasterizerStateCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizerStateCreateInfo.lineWidth = 1.0f;
+    rasterizerStateCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizerStateCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterizerStateCreateInfo.depthBiasEnable = VK_FALSE;
+    rasterizerStateCreateInfo.depthBiasConstantFactor = 0.0f;
+    rasterizerStateCreateInfo.depthBiasClamp = 0.0f;
+    rasterizerStateCreateInfo.depthBiasSlopeFactor = 0.0f;
+
+    // Multi-sampling
+    VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo{};
+    multisampleStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampleStateCreateInfo.sampleShadingEnable = VK_FALSE;
+    multisampleStateCreateInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampleStateCreateInfo.minSampleShading = 1.0f;
+    multisampleStateCreateInfo.pSampleMask = nullptr;
+    multisampleStateCreateInfo.alphaToCoverageEnable = VK_FALSE;
+    multisampleStateCreateInfo.alphaToOneEnable = VK_FALSE;
+
+    // Depth and Stencil Testing
+
+    // Color Blending
+    VkPipelineColorBlendAttachmentState colorBlendAttachmentState{};
+    enableAlphaBlending(colorBlendAttachmentState);
+
+    VkPipelineColorBlendStateCreateInfo colorBlendStateCreateInfo{};
+    colorBlendStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlendStateCreateInfo.logicOpEnable = VK_FALSE;
+    colorBlendStateCreateInfo.logicOp = VK_LOGIC_OP_COPY;
+    colorBlendStateCreateInfo.attachmentCount = 1;
+    colorBlendStateCreateInfo.pAttachments = &colorBlendAttachmentState;
+    colorBlendStateCreateInfo.blendConstants[0] = 0.0f;
+    colorBlendStateCreateInfo.blendConstants[1] = 0.0f;
+    colorBlendStateCreateInfo.blendConstants[2] = 0.0f;
+    colorBlendStateCreateInfo.blendConstants[3] = 0.0f;
+
+    // PipelineLayout
+    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
+    pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutCreateInfo.setLayoutCount = 0;
+    pipelineLayoutCreateInfo.pSetLayouts = nullptr;
+    pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
+    pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
+
+    if (vkCreatePipelineLayout(pDevice, &pipelineLayoutCreateInfo, nullptr, &pPipelineLayout) != VK_SUCCESS)
+        throw runtime_error("failed to create pipeline layout");
 
     // cleanup shader modules
     vkDestroyShaderModule(pDevice, vertShaderModule, nullptr);
@@ -331,19 +441,45 @@ void VulkanTriangleApp::createGraphicsPipeline()
 }
 
 
-VkShaderModule VulkanTriangleApp::createShaderModule(const std::vector<char>& shaderCode)
+VkShaderModule VulkanTriangleApp::createShaderModule(const vector<unsigned char>& shaderCode)
 {
     VkShaderModuleCreateInfo shaderModuleCreateInfo{};
     shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     shaderModuleCreateInfo.codeSize = shaderCode.size();
     shaderModuleCreateInfo.pCode = reinterpret_cast<const uint32_t*>(shaderCode.data());
 
-    VkShaderModule shaderModule{};
-    if (!vkCreateShaderModule(pDevice, &shaderModuleCreateInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+    VkShaderModule shaderModule;
+    if (vkCreateShaderModule(pDevice, &shaderModuleCreateInfo, nullptr, &shaderModule) != VK_SUCCESS) {
         throw runtime_error("failed to create shader module");
     }
 
     return shaderModule;
+}
+
+
+void VulkanTriangleApp::disableAlphaBlending(VkPipelineColorBlendAttachmentState& colorBlendAttachmentState)
+{
+    colorBlendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachmentState.blendEnable = VK_FALSE;
+    colorBlendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
+}
+
+
+void VulkanTriangleApp::enableAlphaBlending(VkPipelineColorBlendAttachmentState& colorBlendAttachmentState)
+{
+    colorBlendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachmentState.blendEnable = VK_TRUE;
+    colorBlendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
 }
 
 
@@ -734,7 +870,6 @@ void VulkanTriangleApp::createInstance()
     appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.apiVersion = VK_API_VERSION_1_0;
 
-
     VkInstanceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
@@ -771,6 +906,8 @@ void VulkanTriangleApp::mainLoop()
 
 void VulkanTriangleApp::cleanUp()
 {
+    vkDestroyPipelineLayout(pDevice, pPipelineLayout, nullptr);
+
     for (auto imageView : swapChainImageViews)
         vkDestroyImageView(pDevice, imageView, nullptr);
 

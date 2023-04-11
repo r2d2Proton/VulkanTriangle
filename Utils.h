@@ -4,5 +4,5 @@
 
 namespace Utils
 {
-    std::vector<char> readFile(const std::string& filename);
+    std::vector<unsigned char> readFile(const std::string& filename);
 }

@@ -43,9 +43,6 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\ndc.vert">
-      <Filter>shaders</Filter>
-    </None>
     <None Include="shaders\ndc.frag">
       <Filter>shaders</Filter>
     </None>
@@ -53,6 +50,9 @@
       <Filter>shaders</Filter>
     </None>
     <None Include="shaders\vertexColor.vert">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\ndc.vert">
       <Filter>shaders</Filter>
     </None>
   </ItemGroup>

@@ -82,7 +82,9 @@ protected:
     void createSwapChain();
     void createImageViews();
     void createGraphicsPipeline();
-    VkShaderModule createShaderModule(const std::vector<char>& shaderCode);
+    VkShaderModule createShaderModule(const std::vector<unsigned char>& shaderCode);
+    void disableAlphaBlending(VkPipelineColorBlendAttachmentState& colorBlendAttachmentState);
+    void enableAlphaBlending(VkPipelineColorBlendAttachmentState& colorBlendAttachmentState);
 
     QueueFamilyIndices findQueueFamilies(const VkPhysicalDevice& physicalDevice, const LogProfile& logProfile);
 
@@ -139,6 +141,8 @@ private:
     VkExtent2D swapChainExtent;
 
     std::vector<VkImageView> swapChainImageViews;
+
+    VkPipelineLayout pPipelineLayout = nullptr;
 
     VkQueue pPresentQueue = nullptr;
     VkQueue pGraphicsQueue = nullptr;
