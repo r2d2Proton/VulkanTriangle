@@ -82,6 +82,7 @@ protected:
     void createSwapChain();
     void createImageViews();
     void createRenderPass();
+    void createFramebuffers();
     void createGraphicsPipeline();
     VkShaderModule createShaderModule(const std::vector<unsigned char>& shaderCode);
     void disableAlphaBlending(VkPipelineColorBlendAttachmentState& colorBlendAttachmentState);
@@ -136,12 +137,14 @@ private:
 
     VkSurfaceKHR pSurface = nullptr;
     VkSwapchainKHR pSwapChain = nullptr;
+
     std::vector<VkImage> swapChainImages;
+    std::vector<VkImageView> swapChainImageViews;
+    std::vector<VkFramebuffer> swapChainFramebuffers;
+
     VkFormat swapChainImageFormat;
     VkColorSpaceKHR swapChainColorSpace;
     VkExtent2D swapChainExtent;
-
-    std::vector<VkImageView> swapChainImageViews;
 
     VkRenderPass pRenderPass = nullptr;
     VkPipelineLayout pPipelineLayout = nullptr;

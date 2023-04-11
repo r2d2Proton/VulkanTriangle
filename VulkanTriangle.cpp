@@ -105,6 +105,7 @@ void VulkanTriangleApp::initVulkan()
     createImageViews();
     createRenderPass();
     createGraphicsPipeline();
+    createFramebuffers();
 }
 
 
@@ -351,6 +352,37 @@ void VulkanTriangleApp::createRenderPass()
 
     if (vkCreateRenderPass(pDevice, &renderPassCreateInfo, nullptr, &pRenderPass) != VK_SUCCESS)
         throw runtime_error("failed to create render pass");
+}
+
+
+void VulkanTriangleApp::createFramebuffers()
+{
+    // create a framebuffer for each imageView in the swapChain
+    swapChainFramebuffers.resize(swapChainImageViews.size());
+
+    for (size_t i = 0; i < swapChainImageViews.size(); ++i)
+    {
+        // a temporary to allow for colorBuffer, depthBuffer, etc. ?
+        // attachmentCount needs to match array size
+        // layers stereoscopic rendering?
+        VkImageView attachments[] =
+        {
+            swapChainImageViews[i]
+        };
+
+        VkFramebufferCreateInfo framebufferCreateInfo{};
+        framebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferCreateInfo.renderPass = pRenderPass;
+        framebufferCreateInfo.attachmentCount = 1;
+        framebufferCreateInfo.pAttachments = attachments;
+        framebufferCreateInfo.width = swapChainExtent.width;
+        framebufferCreateInfo.height = swapChainExtent.height;
+        framebufferCreateInfo.layers = 1;
+
+        if (vkCreateFramebuffer(pDevice, &framebufferCreateInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS)
+            throw runtime_error("failed to create framebuffer");
+    }
+
 }
 
 
@@ -986,6 +1018,9 @@ void VulkanTriangleApp::mainLoop()
 
 void VulkanTriangleApp::cleanUp()
 {
+    for (auto pFramebuffer : swapChainFrameBuffers)
+        vkDestroyFramebuffer(pDevice, pFramebuffer, nullptr);
+
     vkDestroyPipeline(pDevice, pGraphicsPipeline, nullptr);
     vkDestroyPipelineLayout(pDevice, pPipelineLayout, nullptr);
     vkDestroyRenderPass(pDevice, pRenderPass, nullptr);
