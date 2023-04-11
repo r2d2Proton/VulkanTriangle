@@ -494,6 +494,27 @@ void VulkanTriangleApp::createGraphicsPipeline()
     if (vkCreatePipelineLayout(pDevice, &pipelineLayoutCreateInfo, nullptr, &pPipelineLayout) != VK_SUCCESS)
         throw runtime_error("failed to create pipeline layout");
 
+    VkGraphicsPipelineCreateInfo graphicsPipelineCreateInfo{};
+    graphicsPipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    graphicsPipelineCreateInfo.stageCount = 2;
+    graphicsPipelineCreateInfo.pStages = shaderStages;
+    graphicsPipelineCreateInfo.pVertexInputState = &vertexInputStateCreateInfo;
+    graphicsPipelineCreateInfo.pInputAssemblyState = &inputAssemblyCreateInfo;
+    graphicsPipelineCreateInfo.pViewportState = &viewportStateCreateInfo;
+    graphicsPipelineCreateInfo.pRasterizationState = &rasterizerStateCreateInfo;
+    graphicsPipelineCreateInfo.pMultisampleState = &multisampleStateCreateInfo;
+    graphicsPipelineCreateInfo.pDepthStencilState = nullptr;
+    graphicsPipelineCreateInfo.pColorBlendState = &colorBlendStateCreateInfo;
+    graphicsPipelineCreateInfo.pDynamicState = &dynamicStateCreateInfo;
+    graphicsPipelineCreateInfo.layout = pPipelineLayout;
+    graphicsPipelineCreateInfo.renderPass = pRenderPass;
+    graphicsPipelineCreateInfo.subpass = 0;
+    graphicsPipelineCreateInfo.basePipelineHandle = VK_NULL_HANDLE;
+    graphicsPipelineCreateInfo.basePipelineIndex = -1;
+
+    if (vkCreateGraphicsPipelines(pDevice, VK_NULL_HANDLE, 1, &graphicsPipelineCreateInfo, nullptr, &pGraphicsPipeline) != VK_SUCCESS)
+        throw runtime_error("failed to create graphics pipeline");
+
     // cleanup shader modules
     vkDestroyShaderModule(pDevice, vertShaderModule, nullptr);
     vkDestroyShaderModule(pDevice, fragShaderModule, nullptr);
@@ -965,6 +986,7 @@ void VulkanTriangleApp::mainLoop()
 
 void VulkanTriangleApp::cleanUp()
 {
+    vkDestroyPipeline(pDevice, pGraphicsPipeline, nullptr);
     vkDestroyPipelineLayout(pDevice, pPipelineLayout, nullptr);
     vkDestroyRenderPass(pDevice, pRenderPass, nullptr);
 

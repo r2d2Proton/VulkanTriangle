@@ -145,6 +145,7 @@ private:
 
     VkRenderPass pRenderPass = nullptr;
     VkPipelineLayout pPipelineLayout = nullptr;
+    VkPipeline pGraphicsPipeline = nullptr;
 
     VkQueue pPresentQueue = nullptr;
     VkQueue pGraphicsQueue = nullptr;
