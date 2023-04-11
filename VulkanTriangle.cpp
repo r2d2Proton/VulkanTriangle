@@ -103,6 +103,7 @@ void VulkanTriangleApp::initVulkan()
     createLogicalDevice();
     createSwapChain();
     createImageViews();
+    createRenderPass();
     createGraphicsPipeline();
 }
 
@@ -292,6 +293,64 @@ void VulkanTriangleApp::createImageViews()
         if (vkCreateImageView(pDevice, &imageViewCreateInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS)
             throw runtime_error("failed to create image views");
     }
+}
+
+
+void VulkanTriangleApp::createRenderPass()
+{
+    // loadOp and storeOp determine what to do with the data in the attachment before rendering and after rendering
+    // loadOp  : VK_ATTACHMENT_LOAD_OP_LOAD       - preserve existing contents of the attachment
+    //         : VK_ATTACHMENT_LOAD_OP_CLEAR      - clear to constant
+    //         : VK_ATTACHMENT_LOAD_OP_DONT_CARE  - existing contents are undefined
+    // 
+    // storeOp : VK_ATTACHMENT_STORE_OP_STORE     - rendered contents will be store in memory and can be read later
+    //         : VK_ATTACHMENT_STORE_OP_DONT_CARE - undefined
+    //
+    // Textures and Framebuffers in Vulkan are represented by VkImage objects with specific pixel formats.
+    // The layout of the pixels in memory can change based on what you are trying to do with an image.
+    // 
+    //         : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL - images used as color attachment
+    //         : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR          - images to be presented to swap chain
+    //         : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL     - images to be used as destination for a memory copy
+    // 
+    // initialLayout : specifies which layout the image will have before the render pass begins
+    // finalLayout   : specifies the layout to automatically transition to when the render pass finishes
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format = swapChainImageFormat;
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    // attachment - index of attachment
+    //            - layout(location = 0) out vec4 outColor
+    // 
+    // layout     - subpass transition optimal is the best option for performance
+    VkAttachmentReference colorAttachmentRef{};
+    colorAttachmentRef.attachment = 0;
+    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    // pDepthStencilAttachment - attachment for depthStencil
+    // pInputAttachments       - attachments that are read from a shader
+    // pResolveAttachments     - attachments used for multisampling color attachments
+    // pPreserveAttachments    - attachments that are not used by this subpass but the data must be preserved
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorAttachmentRef;
+
+    VkRenderPassCreateInfo renderPassCreateInfo{};
+    renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassCreateInfo.attachmentCount = 1;
+    renderPassCreateInfo.pAttachments = &colorAttachment;
+    renderPassCreateInfo.subpassCount = 1;
+    renderPassCreateInfo.pSubpasses = &subpass;
+
+    if (vkCreateRenderPass(pDevice, &renderPassCreateInfo, nullptr, &pRenderPass) != VK_SUCCESS)
+        throw runtime_error("failed to create render pass");
 }
 
 
@@ -907,6 +966,7 @@ void VulkanTriangleApp::mainLoop()
 void VulkanTriangleApp::cleanUp()
 {
     vkDestroyPipelineLayout(pDevice, pPipelineLayout, nullptr);
+    vkDestroyRenderPass(pDevice, pRenderPass, nullptr);
 
     for (auto imageView : swapChainImageViews)
         vkDestroyImageView(pDevice, imageView, nullptr);
