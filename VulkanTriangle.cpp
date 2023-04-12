@@ -84,6 +84,7 @@ void VulkanTriangleApp::initVulkan()
     createFramebuffers();
     createCommandPool();
     createCommandBuffer();
+    createSyncObjects();
 }
 
 
@@ -92,12 +93,20 @@ void VulkanTriangleApp::mainLoop()
     while (!glfwWindowShouldClose(pWindow))
     {
         glfwPollEvents();
+        drawFrame();
     }
+
+    // wait for the logical device to finish operations before exiting
+    vkDeviceWaitIdle(pDevice);
 }
 
 
 void VulkanTriangleApp::cleanUp()
 {
+    vkDestroySemaphore(pDevice, pImageAvailableSemaphore, nullptr);
+    vkDestroySemaphore(pDevice, pRenderFinishedSemaphore, nullptr);
+    vkDestroyFence(pDevice, pInFlightFence, nullptr);
+
     vkDestroyCommandPool(pDevice, pCommandPool, nullptr);
 
     for (auto pFramebuffer : swapChainFramebuffers)
@@ -352,6 +361,16 @@ void VulkanTriangleApp::createRenderPass()
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    // VK_SUBPASS_EXTERNAL - refers to the implicit subpass before or after the render pass depending on
+    //                     - srcSubpass 
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
     // pDepthStencilAttachment - attachment for depthStencil
     // pInputAttachments       - attachments that are read from a shader
     // pResolveAttachments     - attachments used for multisampling color attachments
@@ -367,6 +386,8 @@ void VulkanTriangleApp::createRenderPass()
     renderPassCreateInfo.pAttachments = &colorAttachment;
     renderPassCreateInfo.subpassCount = 1;
     renderPassCreateInfo.pSubpasses = &subpass;
+    renderPassCreateInfo.dependencyCount = 1;
+    renderPassCreateInfo.pDependencies = &dependency;
 
     if (vkCreateRenderPass(pDevice, &renderPassCreateInfo, nullptr, &pRenderPass) != VK_SUCCESS)
         throw runtime_error("failed to create render pass");
@@ -377,11 +398,11 @@ void VulkanTriangleApp::createGraphicsPipeline()
 {
     const char* ndcVertShaderFilename = "shaders/ndcVert.spv";
     const char* ndcFragShaderFilename = "shaders/ndcFrag.spv";
-    const char* vertexColorVertFilename = "shaders/vertexColorVert.spv";
-    const char* vertexColorFragFilename = "shaders/vertexColorFrag.spv";
+    const char* vertexColorVertShaderFilename = "shaders/vertexColorVert.spv";
+    const char* vertexColorFragShaderFilename = "shaders/vertexColorFrag.spv";
 
-    auto vertShaderCode = Utils::readFile(ndcVertShaderFilename);
-    auto fragShaderCode = Utils::readFile(ndcFragShaderFilename);
+    auto vertShaderCode = Utils::readFile(vertexColorVertShaderFilename);
+    auto fragShaderCode = Utils::readFile(vertexColorFragShaderFilename);
 
     // compilation from byteCode to machineCode for execution on the GPU does not happen until it is created in the pipeline
     VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
@@ -597,6 +618,79 @@ void VulkanTriangleApp::createCommandBuffer()
 
     if (vkAllocateCommandBuffers(pDevice, &commandBufferAllocateInfo, &pCommandBuffer) != VK_SUCCESS)
         throw runtime_error("failed to allocate command buffer");
+}
+
+
+void VulkanTriangleApp::createSyncObjects()
+{
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    if (vkCreateSemaphore(pDevice, &semaphoreInfo, nullptr, &pImageAvailableSemaphore) != VK_SUCCESS)
+        throw runtime_error("failed to create image available semaphore");
+
+    if (vkCreateSemaphore(pDevice, &semaphoreInfo, nullptr, &pRenderFinishedSemaphore) != VK_SUCCESS)
+        throw runtime_error("failed to create render finished semaphore");
+
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+    if (vkCreateFence(pDevice, &fenceInfo, nullptr, &pInFlightFence) != VK_SUCCESS)
+        throw runtime_error("failed to create inflight fence");
+}
+
+
+void VulkanTriangleApp::drawFrame()
+{
+    // pImageAvailableSemaphore and VK_NULL_HANDLE - synchronization objects can be sempahore or fence or both
+    uint32_t imageIndex = 0;
+    vkAcquireNextImageKHR(pDevice, pSwapChain, UINT64_MAX, pImageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+
+    // wait for the previous frame to finish - VK_TRUE wait for all fences and timeout parameter (UINT64_MAX disables timeout)
+    vkWaitForFences(pDevice, 1, &pInFlightFence, VK_TRUE, UINT64_MAX);
+
+    // reset fences
+    vkResetFences(pDevice, 1, &pInFlightFence);
+
+    // reset the command buffer - VkCommandBufferResetFlags : 0
+    vkResetCommandBuffer(pCommandBuffer, 0);
+
+    recordCommandBuffer(pCommandBuffer, imageIndex);
+
+    // submit the command buffer
+    // each entry in VkPipelineStageFlags corresponds to VkSemaphore
+    VkSemaphore waitSemaphores[] = { pImageAvailableSemaphore };
+    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+
+    VkSemaphore signalSemaphores[] = { pRenderFinishedSemaphore };
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = waitSemaphores;
+    submitInfo.pWaitDstStageMask = waitStages;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &pCommandBuffer;
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = signalSemaphores;
+
+    // submit the command buffer to the graphics queue
+    if (vkQueueSubmit(pGraphicsQueue, 1, &submitInfo, pInFlightFence) != VK_SUCCESS)
+        throw runtime_error("failed to submit draw command buffer");
+
+    VkSwapchainKHR swapChains[] = { pSwapChain };
+
+    VkPresentInfoKHR presentInfo{};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signalSemaphores;
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = swapChains;
+    presentInfo.pImageIndices = &imageIndex;
+    presentInfo.pResults = nullptr;
+
+    vkQueuePresentKHR(pGraphicsQueue, &presentInfo);
 }
 
 

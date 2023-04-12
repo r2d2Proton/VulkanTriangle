@@ -84,6 +84,7 @@ protected:
     void createFramebuffers();
     void createCommandPool();
     void createCommandBuffer();
+    void createSyncObjects();
 
     void mainLoop();
 
@@ -131,6 +132,11 @@ protected:
 
     // createCommandBuffer
 
+    // createSyncObjects
+
+    // mainLoop
+    void drawFrame();
+
     void recordCommandBuffer(VkCommandBuffer pCommmandBuffer, uint32_t imageIndex);
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback
@@ -168,6 +174,10 @@ private:
 
     VkCommandPool pCommandPool = nullptr;
     VkCommandBuffer pCommandBuffer = nullptr;
+
+    VkSemaphore pImageAvailableSemaphore = nullptr;
+    VkSemaphore pRenderFinishedSemaphore = nullptr;
+    VkFence pInFlightFence = nullptr;
 
     VkQueue pPresentQueue = nullptr;
     VkQueue pGraphicsQueue = nullptr;
