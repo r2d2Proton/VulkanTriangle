@@ -65,6 +65,8 @@ class VulkanTriangleApp
 {
 public:
 
+    const uint32_t MaxFramesInFlight = 3;
+
     void run();
 
 protected:
@@ -83,7 +85,7 @@ protected:
     void createGraphicsPipeline();
     void createFramebuffers();
     void createCommandPool();
-    void createCommandBuffer();
+    void createCommandBuffers();
     void createSyncObjects();
 
     void mainLoop();
@@ -157,6 +159,7 @@ private:
 
     VkDevice pDevice = nullptr;
 
+    uint32_t currentFrame = 0;;
     VkSurfaceKHR pSurface = nullptr;
     VkSwapchainKHR pSwapChain = nullptr;
 
@@ -173,11 +176,14 @@ private:
     VkPipeline pGraphicsPipeline = nullptr;
 
     VkCommandPool pCommandPool = nullptr;
-    VkCommandBuffer pCommandBuffer = nullptr;
+    VkSemaphore pAppSemaphore = nullptr;
 
-    VkSemaphore pImageAvailableSemaphore = nullptr;
-    VkSemaphore pRenderFinishedSemaphore = nullptr;
-    VkFence pInFlightFence = nullptr;
+    // per frame
+    std::vector<VkCommandBuffer> commandBuffers;
+
+    std::vector<VkSemaphore> imageAvailableSemaphores;
+    std::vector<VkSemaphore> renderFinishedSemaphores;
+    std::vector<VkFence> inFlightFences;
 
     VkQueue pPresentQueue = nullptr;
     VkQueue pGraphicsQueue = nullptr;

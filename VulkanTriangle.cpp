@@ -83,7 +83,7 @@ void VulkanTriangleApp::initVulkan()
     createGraphicsPipeline();
     createFramebuffers();
     createCommandPool();
-    createCommandBuffer();
+    createCommandBuffers();
     createSyncObjects();
 }
 
@@ -103,9 +103,16 @@ void VulkanTriangleApp::mainLoop()
 
 void VulkanTriangleApp::cleanUp()
 {
-    vkDestroySemaphore(pDevice, pImageAvailableSemaphore, nullptr);
-    vkDestroySemaphore(pDevice, pRenderFinishedSemaphore, nullptr);
-    vkDestroyFence(pDevice, pInFlightFence, nullptr);
+    vkDestroySemaphore(pDevice, pAppSemaphore, nullptr);
+
+    for (auto pSemaphore : imageAvailableSemaphores)
+        vkDestroySemaphore(pDevice, pSemaphore, nullptr);
+
+    for (auto pSemaphore : renderFinishedSemaphores)
+        vkDestroySemaphore(pDevice, pSemaphore, nullptr);
+
+    for (auto pFence : inFlightFences)
+        vkDestroyFence(pDevice, pFence, nullptr);
 
     vkDestroyCommandPool(pDevice, pCommandPool, nullptr);
 
@@ -242,11 +249,11 @@ void VulkanTriangleApp::createSwapChain()
     VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
     VkExtent2D extent = chooseSwapExtent(swapChainSupport.caps);
 
-    uint32_t imageCount = swapChainSupport.caps.minImageCount + 1;
+    uint32_t imageCount = MaxFramesInFlight;
 
     // 0 maxImageCount means no maximum
     if (swapChainSupport.caps.maxImageCount > 0 && imageCount > swapChainSupport.caps.maxImageCount)
-        imageCount = swapChainSupport.caps.maxImageCount;
+        imageCount = std::clamp(imageCount, swapChainSupport.caps.minImageCount, swapChainSupport.caps.maxImageCount);
 
     VkSwapchainCreateInfoKHR swapChainCreateInfo{};
     swapChainCreateInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -588,7 +595,6 @@ void VulkanTriangleApp::createFramebuffers()
         if (vkCreateFramebuffer(pDevice, &framebufferCreateInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS)
             throw runtime_error("failed to create framebuffer");
     }
-
 }
 
 
@@ -606,64 +612,76 @@ void VulkanTriangleApp::createCommandPool()
 }
 
 
-void VulkanTriangleApp::createCommandBuffer()
+void VulkanTriangleApp::createCommandBuffers()
 {
+    // should it be tied to swapChainFramebuffers?
+    commandBuffers.resize(swapChainImageViews.size());
+
     // VK_COMMAND_BUFFER_LEVEL_PRIMARY   - can be submitted to a queue for execution but cannot be called from other command buffers
     // VK_COMMAND_BUFFER_LEVEL_SECONDARY - cannot be submitted directly but can be called from primary command buffers
     VkCommandBufferAllocateInfo commandBufferAllocateInfo{};
     commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     commandBufferAllocateInfo.commandPool = pCommandPool;
     commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    commandBufferAllocateInfo.commandBufferCount = 1;
+    commandBufferAllocateInfo.commandBufferCount = (uint32_t)commandBuffers.size();
 
-    if (vkAllocateCommandBuffers(pDevice, &commandBufferAllocateInfo, &pCommandBuffer) != VK_SUCCESS)
-        throw runtime_error("failed to allocate command buffer");
+    if (vkAllocateCommandBuffers(pDevice, &commandBufferAllocateInfo, commandBuffers.data()) != VK_SUCCESS)
+        throw runtime_error("failed to allocate command buffers");
 }
 
 
 void VulkanTriangleApp::createSyncObjects()
 {
+    // should it be tied to swapChainFramebuffers?
+    imageAvailableSemaphores.resize(swapChainImageViews.size());
+    renderFinishedSemaphores.resize(swapChainImageViews.size());
+    inFlightFences.resize(swapChainImageViews.size());
+
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-    if (vkCreateSemaphore(pDevice, &semaphoreInfo, nullptr, &pImageAvailableSemaphore) != VK_SUCCESS)
-        throw runtime_error("failed to create image available semaphore");
-
-    if (vkCreateSemaphore(pDevice, &semaphoreInfo, nullptr, &pRenderFinishedSemaphore) != VK_SUCCESS)
-        throw runtime_error("failed to create render finished semaphore");
 
     VkFenceCreateInfo fenceInfo{};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    if (vkCreateFence(pDevice, &fenceInfo, nullptr, &pInFlightFence) != VK_SUCCESS)
-        throw runtime_error("failed to create inflight fence");
+    // create app semaphore for querying items
+    if (vkCreateSemaphore(pDevice, &semaphoreInfo, nullptr, &pAppSemaphore) != VK_SUCCESS)
+        throw runtime_error("failed to create App semaphore");
+
+    for (size_t i = 0; i < swapChainImageViews.size(); ++i)
+    {
+        if (vkCreateSemaphore(pDevice, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS)
+            throw runtime_error("failed to create image available semaphore");
+
+        if (vkCreateSemaphore(pDevice, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS)
+            throw runtime_error("failed to create render finished semaphore");
+
+        if (vkCreateFence(pDevice, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS)
+            throw runtime_error("failed to create inflight fence");
+    }
 }
 
 
 void VulkanTriangleApp::drawFrame()
 {
+    // wait for the previous frame to finish - VK_TRUE wait for all fences and timeout parameter (UINT64_MAX disables timeout)
+    vkWaitForFences(pDevice, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+    vkResetFences(pDevice, 1, &inFlightFences[currentFrame]);
+
     // pImageAvailableSemaphore and VK_NULL_HANDLE - synchronization objects can be sempahore or fence or both
     uint32_t imageIndex = 0;
-    vkAcquireNextImageKHR(pDevice, pSwapChain, UINT64_MAX, pImageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
-
-    // wait for the previous frame to finish - VK_TRUE wait for all fences and timeout parameter (UINT64_MAX disables timeout)
-    vkWaitForFences(pDevice, 1, &pInFlightFence, VK_TRUE, UINT64_MAX);
-
-    // reset fences
-    vkResetFences(pDevice, 1, &pInFlightFence);
+    vkAcquireNextImageKHR(pDevice, pSwapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
 
     // reset the command buffer - VkCommandBufferResetFlags : 0
-    vkResetCommandBuffer(pCommandBuffer, 0);
-
-    recordCommandBuffer(pCommandBuffer, imageIndex);
+    vkResetCommandBuffer(commandBuffers[currentFrame], 0);
+    recordCommandBuffer(commandBuffers[currentFrame], imageIndex);
 
     // submit the command buffer
     // each entry in VkPipelineStageFlags corresponds to VkSemaphore
-    VkSemaphore waitSemaphores[] = { pImageAvailableSemaphore };
+    VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
     VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
-    VkSemaphore signalSemaphores[] = { pRenderFinishedSemaphore };
+    VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -671,12 +689,12 @@ void VulkanTriangleApp::drawFrame()
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &pCommandBuffer;
+    submitInfo.pCommandBuffers = &commandBuffers[currentFrame];
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
     // submit the command buffer to the graphics queue
-    if (vkQueueSubmit(pGraphicsQueue, 1, &submitInfo, pInFlightFence) != VK_SUCCESS)
+    if (vkQueueSubmit(pGraphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS)
         throw runtime_error("failed to submit draw command buffer");
 
     VkSwapchainKHR swapChains[] = { pSwapChain };
@@ -691,10 +709,12 @@ void VulkanTriangleApp::drawFrame()
     presentInfo.pResults = nullptr;
 
     vkQueuePresentKHR(pGraphicsQueue, &presentInfo);
+
+    currentFrame = (currentFrame + 1) % swapChainImageViews.size();
 }
 
 
-void VulkanTriangleApp::recordCommandBuffer(VkCommandBuffer pCommmandBuffer, uint32_t imageIndex)
+void VulkanTriangleApp::recordCommandBuffer(VkCommandBuffer pCommandBuffer, uint32_t imageIndex)
 {
     // VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT      - command buffer will be rerecorded right after excution
     // VK_COMMAND_BUFFER_USAGE_RENDER_PASS_COMTINUE_BIT - a secondary command buffer that will be entirely within a single render pass

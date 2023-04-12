@@ -1,0 +1,31 @@
+Modified application to support mutliple frames being rendered (MaxFramesInFlight).
+
+Switched command buffers (VkCommandBuffer), semaphores (VkSemaphore), and fences (VkFence) to use std::vector<>.
+One per swapChainImageViews<VkImageView>.
+Should it be based off of VkFramebuffer.
+
+createSwapChain() modified to use MaxFramesInFlight.
+
+createCommandBuffers() modified to resize command buffers based on swapChainImageViews::size().
+
+createSyncObjects() modified to use swapChainImageViews.size() for semaphore and fences.
+
+drawFrame() modifed to use currentFrame.
+    follows tutorial in waiting for the fence and clear the fence for the currentFrame.
+    vkAcquireNextImageKHR(VkSemaphore[currentFrame], nullptr).
+    
+    vkResetCommandBuffer(commandBuffers[currentFrame], 0);
+    recordCommandBuffer(commandBuffers[currentFrame], imageIndex);
+    
+    VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
+    VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
+
+    submitInfo.pCommandBuffers = &commandBuffers[currentFrame];
+    
+    vkQueueSubmit(inFlightFences[currentFrame])
+    
+    presentInfo.pImageIndices = &imageIndex;
+    vkQueuePresentKHR(VkPresentInfoKHR);
+    
+    currentFrame = (currentFrame + 1) % swapChainImageViews.size();
+
