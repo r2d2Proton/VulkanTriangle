@@ -141,6 +141,13 @@ protected:
 
     void recordCommandBuffer(VkCommandBuffer pCommmandBuffer, uint32_t imageIndex);
 
+    void recreateSwapChain();
+    void cleanupSwapChain();
+
+    
+    // callbacks
+    static void framebufferResizeCallback(GLFWwindow* pWindow, int width, int height);
+
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback
     (
         VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -159,6 +166,7 @@ private:
 
     VkDevice pDevice = nullptr;
 
+    bool framebufferResized = false;
     uint32_t currentFrame = 0;;
     VkSurfaceKHR pSurface = nullptr;
     VkSwapchainKHR pSwapChain = nullptr;
@@ -180,7 +188,6 @@ private:
 
     // per frame
     std::vector<VkCommandBuffer> commandBuffers;
-
     std::vector<VkSemaphore> imageAvailableSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
     std::vector<VkFence> inFlightFences;

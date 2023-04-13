@@ -65,8 +65,10 @@ void VulkanTriangleApp::initWindow()
 {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+
     pWindow = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+    glfwSetWindowUserPointer(pWindow, this);
+    glfwSetFramebufferSizeCallback(pWindow, framebufferResizeCallback);
 }
 
 
@@ -103,6 +105,8 @@ void VulkanTriangleApp::mainLoop()
 
 void VulkanTriangleApp::cleanUp()
 {
+    cleanupSwapChain();
+
     vkDestroySemaphore(pDevice, pAppSemaphore, nullptr);
 
     for (auto pSemaphore : imageAvailableSemaphores)
@@ -116,17 +120,10 @@ void VulkanTriangleApp::cleanUp()
 
     vkDestroyCommandPool(pDevice, pCommandPool, nullptr);
 
-    for (auto pFramebuffer : swapChainFramebuffers)
-        vkDestroyFramebuffer(pDevice, pFramebuffer, nullptr);
-
     vkDestroyPipeline(pDevice, pGraphicsPipeline, nullptr);
     vkDestroyPipelineLayout(pDevice, pPipelineLayout, nullptr);
     vkDestroyRenderPass(pDevice, pRenderPass, nullptr);
 
-    for (auto imageView : swapChainImageViews)
-        vkDestroyImageView(pDevice, imageView, nullptr);
-
-    vkDestroySwapchainKHR(pDevice, pSwapChain, nullptr);
     vkDestroyDevice(pDevice, nullptr);
 
     if (enableValidationLayers)
@@ -662,15 +659,54 @@ void VulkanTriangleApp::createSyncObjects()
 }
 
 
+void VulkanTriangleApp::recreateSwapChain()
+{
+    // poor pause implementation
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(pWindow, &width, &height);
+    while (width == 0 || height == 0)
+    {
+        glfwGetFramebufferSize(pWindow, &width, &height);
+        glfwWaitEvents();
+    }
+
+    vkDeviceWaitIdle(pDevice);
+
+    cleanupSwapChain();
+
+    currentFrame = 0;
+
+    createSwapChain();
+    createImageViews();
+    createFramebuffers();
+}
+
+
+void VulkanTriangleApp::cleanupSwapChain()
+{
+    for (auto pFramebuffer : swapChainFramebuffers)
+        vkDestroyFramebuffer(pDevice, pFramebuffer, nullptr);
+
+    for (auto imageView : swapChainImageViews)
+        vkDestroyImageView(pDevice, imageView, nullptr);
+
+    vkDestroySwapchainKHR(pDevice, pSwapChain, nullptr);
+}
+
+
 void VulkanTriangleApp::drawFrame()
 {
     // wait for the previous frame to finish - VK_TRUE wait for all fences and timeout parameter (UINT64_MAX disables timeout)
     vkWaitForFences(pDevice, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-    vkResetFences(pDevice, 1, &inFlightFences[currentFrame]);
 
     // pImageAvailableSemaphore and VK_NULL_HANDLE - synchronization objects can be sempahore or fence or both
     uint32_t imageIndex = 0;
-    vkAcquireNextImageKHR(pDevice, pSwapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+    VkResult result = vkAcquireNextImageKHR(pDevice, pSwapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+    
+    bool bRecreateSwapChain = (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized ? true : false);
+
+    // only reset the fences if work has been sent to the queues
+    vkResetFences(pDevice, 1, &inFlightFences[currentFrame]);
 
     // reset the command buffer - VkCommandBufferResetFlags : 0
     vkResetCommandBuffer(commandBuffers[currentFrame], 0);
@@ -708,7 +744,17 @@ void VulkanTriangleApp::drawFrame()
     presentInfo.pImageIndices = &imageIndex;
     presentInfo.pResults = nullptr;
 
-    vkQueuePresentKHR(pGraphicsQueue, &presentInfo);
+    result = vkQueuePresentKHR(pGraphicsQueue, &presentInfo);
+
+    // notice that bRecreateSwapChain is set to its current value if the other checks are false
+    bRecreateSwapChain = (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized ? true : bRecreateSwapChain);
+
+    if (bRecreateSwapChain)
+    {
+        framebufferResized = false;
+        recreateSwapChain();
+        return;
+    }
 
     currentFrame = (currentFrame + 1) % swapChainImageViews.size();
 }
@@ -1209,6 +1255,15 @@ void VulkanTriangleApp::disableAlphaBlending(VkPipelineColorBlendAttachmentState
     colorBlendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
     colorBlendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
     colorBlendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
+}
+
+
+void VulkanTriangleApp::framebufferResizeCallback(GLFWwindow* pWindow, int width, int height)
+{
+    auto pThis = reinterpret_cast<VulkanTriangleApp*>(glfwGetWindowUserPointer(pWindow));
+    if (pThis == nullptr) return;
+
+    pThis->framebufferResized = true;
 }
 
 
