@@ -78,7 +78,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <AdditionalIncludeDirectories>C:\VulkanSDK\1.3.243.0\Include;C:\VulkanSDK\Libraries\glfw\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\VulkanSDK\1.3.243.0\Include;C:\VulkanSDK\Libraries;C:\VulkanSDK\Libraries\glfw\include;C:\VulkanSDK\Libraries\glm</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -96,7 +96,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <AdditionalIncludeDirectories>C:\VulkanSDK\1.3.243.0\Include;C:\VulkanSDK\Libraries\glfw\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\VulkanSDK\1.3.243.0\Include;C:\VulkanSDK\Libraries;C:\VulkanSDK\Libraries\glfw\include;C:\VulkanSDK\Libraries\glm</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -114,7 +114,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <AdditionalIncludeDirectories>C:\VulkanSDK\1.3.243.0\Include;C:\VulkanSDK\Libraries\glfw\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\VulkanSDK\1.3.243.0\Include;C:\VulkanSDK\Libraries;C:\VulkanSDK\Libraries\glfw\include;C:\VulkanSDK\Libraries\glm</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -132,7 +132,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <AdditionalIncludeDirectories>C:\VulkanSDK\1.3.243.0\Include;C:\VulkanSDK\Libraries\glfw\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\VulkanSDK\1.3.243.0\Include;C:\VulkanSDK\Libraries;C:\VulkanSDK\Libraries\glfw\include;C:\VulkanSDK\Libraries\glm</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -146,11 +146,13 @@
     <ClCompile Include="Logging.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Utils.cpp" />
+    <ClCompile Include="Vertex.cpp" />
     <ClCompile Include="VulkanTriangle.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Logging.h" />
     <ClInclude Include="Utils.h" />
+    <ClInclude Include="Vertex.h" />
     <ClInclude Include="VulkanTriangle.h" />
   </ItemGroup>
   <ItemGroup>
@@ -166,6 +168,8 @@
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">6.6</ShaderModel>
     </None>
+    <None Include="shaders\newDim.frag" />
+    <None Include="shaders\newDim.vert" />
     <None Include="shaders\vertexColor.frag" />
     <None Include="shaders\vertexColor.vert" />
   </ItemGroup>

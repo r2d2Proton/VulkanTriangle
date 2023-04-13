@@ -11,6 +11,8 @@
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 
+#include <glm/glm.hpp>
+
 #include <vulkan/vulkan.h>
 
 #include <iostream>
@@ -85,6 +87,7 @@ protected:
     void createGraphicsPipeline();
     void createFramebuffers();
     void createCommandPool();
+    void createVertexBuffer();
     void createCommandBuffers();
     void createSyncObjects();
 
@@ -141,9 +144,10 @@ protected:
 
     void recordCommandBuffer(VkCommandBuffer pCommmandBuffer, uint32_t imageIndex);
 
+    uint32_t findMemoryType(uint32_t filter, VkMemoryPropertyFlags propFlags);
+
     void recreateSwapChain();
     void cleanupSwapChain();
-
     
     // callbacks
     static void framebufferResizeCallback(GLFWwindow* pWindow, int width, int height);
@@ -191,6 +195,9 @@ private:
     std::vector<VkSemaphore> imageAvailableSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
     std::vector<VkFence> inFlightFences;
+
+    VkBuffer pVertexBuffer = nullptr;
+    VkDeviceMemory pVertexBufferMemory = nullptr;
 
     VkQueue pPresentQueue = nullptr;
     VkQueue pGraphicsQueue = nullptr;

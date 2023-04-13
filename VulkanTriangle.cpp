@@ -1,4 +1,5 @@
 #include "VulkanTriangle.h"
+#include "Vertex.h"
 #include "Utils.h"
 
 using std::optional;
@@ -52,6 +53,16 @@ const vector<const char*> deviceExtensions =
 };
 
 
+// interleaving vertex data
+const std::vector<Vertex> vertices =
+{
+    //  pos                  color
+    { {  0.0, -0.5, 0.0 }, { 1.0, 0.0, 0.0, 0.25 } },
+    { {  0.5,  0.5, 0.0 }, { 0.0, 1.0, 0.0, 1.00 } },
+    { { -0.5,  0.5, 0.0 }, { 0.0, 0.0, 1.0, 0.70 } }
+};
+
+
 void VulkanTriangleApp::run()
 {
     initWindow();
@@ -85,6 +96,7 @@ void VulkanTriangleApp::initVulkan()
     createGraphicsPipeline();
     createFramebuffers();
     createCommandPool();
+    createVertexBuffer();
     createCommandBuffers();
     createSyncObjects();
 }
@@ -106,6 +118,9 @@ void VulkanTriangleApp::mainLoop()
 void VulkanTriangleApp::cleanUp()
 {
     cleanupSwapChain();
+
+    vkDestroyBuffer(pDevice, pVertexBuffer, nullptr);
+    vkFreeMemory(pDevice, pVertexBufferMemory, nullptr);
 
     vkDestroySemaphore(pDevice, pAppSemaphore, nullptr);
 
@@ -404,9 +419,11 @@ void VulkanTriangleApp::createGraphicsPipeline()
     const char* ndcFragShaderFilename = "shaders/ndcFrag.spv";
     const char* vertexColorVertShaderFilename = "shaders/vertexColorVert.spv";
     const char* vertexColorFragShaderFilename = "shaders/vertexColorFrag.spv";
+    const char* newDimVertShaderFilename = "shaders/newDimVert.spv";
+    const char* newDimFragShaderFilename = "shaders/newDimFrag.spv";
 
-    auto vertShaderCode = Utils::readFile(vertexColorVertShaderFilename);
-    auto fragShaderCode = Utils::readFile(vertexColorFragShaderFilename);
+    auto vertShaderCode = Utils::readFile(newDimVertShaderFilename);
+    auto fragShaderCode = Utils::readFile(newDimFragShaderFilename);
 
     // compilation from byteCode to machineCode for execution on the GPU does not happen until it is created in the pipeline
     VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
@@ -427,8 +444,11 @@ void VulkanTriangleApp::createGraphicsPipeline()
 
     VkPipelineShaderStageCreateInfo shaderStages[] = { vertPipelineShaderStageInfo, fragPipelineShaderStageInfo };
 
-    vector<VkVertexInputBindingDescription> vertexInputBindings;
-    vector<VkVertexInputAttributeDescription> vertexInputAttrDescriptions;
+    //vector<VkVertexInputBindingDescription> vertexInputBindings;
+    //vector<VkVertexInputAttributeDescription> vertexInputAttrDescriptions;
+
+    auto vertexInputBindings = Vertex::getBindingDescription();
+    auto vertexInputAttrDescriptions = Vertex::getAttributeDescription();
 
     // fixed functions - { DynamicState, VertexInput, InputAssembly, ViewportScissors, Rasterizer, Multisampling, D24S8, ColorBlending, PipelineLayout
 
@@ -448,8 +468,8 @@ void VulkanTriangleApp::createGraphicsPipeline()
     // VertexInput
     VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo{};
     vertexInputStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputStateCreateInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexInputBindings.size());
-    vertexInputStateCreateInfo.pVertexBindingDescriptions = vertexInputBindings.data();
+    vertexInputStateCreateInfo.vertexBindingDescriptionCount = 1;
+    vertexInputStateCreateInfo.pVertexBindingDescriptions = &vertexInputBindings;
     vertexInputStateCreateInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputAttrDescriptions.size());
     vertexInputStateCreateInfo.pVertexAttributeDescriptions = vertexInputAttrDescriptions.data();
 
@@ -606,6 +626,55 @@ void VulkanTriangleApp::createCommandPool()
 
     if (vkCreateCommandPool(pDevice, &commandPoolCreateInfo, nullptr, &pCommandPool) != VK_SUCCESS)
         throw runtime_error("failed to create the command pool");
+}
+
+
+uint32_t VulkanTriangleApp::findMemoryType(uint32_t filter, VkMemoryPropertyFlags propFlags)
+{
+    VkPhysicalDeviceMemoryProperties memProps{};
+    vkGetPhysicalDeviceMemoryProperties(pPhysicalDevice, &memProps);
+
+    for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i)
+    {
+        if (filter & (1 << i) && (memProps.memoryTypes[i].propertyFlags & propFlags ) == propFlags)
+            return i;
+    }
+
+    throw runtime_error("failed to find suitable memory type");
+
+    return 0;
+}
+
+
+void VulkanTriangleApp::createVertexBuffer()
+{
+    VkBufferCreateInfo buffInfo{};
+    buffInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    buffInfo.size = sizeof(Vertex) * vertices.size();
+    buffInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    buffInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    buffInfo.flags = 0;
+
+    if (vkCreateBuffer(pDevice, &buffInfo, nullptr, &pVertexBuffer))
+        throw runtime_error("failed to create vertex buffer");
+
+    VkMemoryRequirements memReqs{};
+    vkGetBufferMemoryRequirements(pDevice, pVertexBuffer, &memReqs);
+
+    VkMemoryAllocateInfo memAlloc{};
+    memAlloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    memAlloc.allocationSize = memReqs.size;
+    memAlloc.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if (vkAllocateMemory(pDevice, &memAlloc, nullptr, &pVertexBufferMemory) != VK_SUCCESS)
+        throw runtime_error("failed to alloate vertex buffer memory");
+
+    vkBindBufferMemory(pDevice, pVertexBuffer, pVertexBufferMemory, 0);
+
+    void* pData = nullptr;
+    vkMapMemory(pDevice, pVertexBufferMemory, 0, buffInfo.size, 0, &pData);
+    memcpy(pData, vertices.data(), (size_t)buffInfo.size);
+    vkUnmapMemory(pDevice, pVertexBufferMemory);
 }
 
 
@@ -807,9 +876,13 @@ void VulkanTriangleApp::recordCommandBuffer(VkCommandBuffer pCommandBuffer, uint
     scissor.extent = swapChainExtent;
     vkCmdSetScissor(pCommandBuffer, 0, 1, &scissor);
 
+    VkBuffer vertexBuffers[] = { pVertexBuffer };
+    VkDeviceSize offsets[] = { 0 };
+    vkCmdBindVertexBuffers(pCommandBuffer, 0, 1, vertexBuffers, offsets);
+
     // draw NDC triangle
     // vertexCount, instanceCount, firstVertex, firstInstance
-    vkCmdDraw(pCommandBuffer, 3, 1, 0, 0);
+    vkCmdDraw(pCommandBuffer, (uint32_t)vertices.size(), 1, 0, 0);
 
     // end render pass
     vkCmdEndRenderPass(pCommandBuffer);
